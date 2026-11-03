@@ -45,6 +45,7 @@ typedef struct {
 	bool     is_raw;
 	uint32_t raw_freq;     /* For raw signals */
 	uint16_t raw_count;
+	uint16_t raw_occurrence; /* Disambiguate duplicate raw button names. */
 	bool     valid;
 } ir_universal_cmd_t;
 

@@ -3312,7 +3312,7 @@ static void sub_ghz_add_manually_draw_list(uint8_t sel, uint8_t scroll_top)
 		u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 	}
 
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Select", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Select", button_ok_8x8);
 	m1_u8g2_nextpage();
 }
 

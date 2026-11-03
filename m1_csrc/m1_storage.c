@@ -835,7 +835,7 @@ static void browse_gui_update(uint8_t sel_item, char *file_name)
 	}
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
 	m1_draw_text(&m1_u8g2, 8, 55, 114, print_ptr, TEXT_ALIGN_LEFT);
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Open", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Open", button_ok_8x8);
 
     m1_u8g2_nextpage(); // Update display RAM
 

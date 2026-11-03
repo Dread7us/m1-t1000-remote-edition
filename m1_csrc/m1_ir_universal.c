@@ -16,6 +16,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "stm32h5xx_hal.h"
 #include "main.h"
 #include "m1_ir_universal.h"
@@ -32,6 +33,7 @@
 #include "irsnd.h"
 #include "flipper_ir.h"
 #include "ff.h"
+#include "m1_ir_remote_view.h"
 
 /*************************** D E F I N E S ************************************/
 
@@ -70,6 +72,8 @@ static uint16_t s_browse_count;
 static uint16_t s_browse_page;
 static uint16_t s_browse_selection;
 static ir_universal_mode_t s_mode;
+static bool s_classic_remote = true;
+static uint8_t s_remote_saved_orientation;
 static char s_current_path[IR_UNIVERSAL_PATH_MAX_LEN];
 
 /* Favorites and recent tracking */
@@ -80,6 +84,8 @@ static uint8_t s_recent_count;
 
 /* Transmit state */
 static IRMP_DATA s_tx_irmp_data;
+static bool s_remote_tx_started;
+static TickType_t s_remote_tx_tick;
 
 /* Raw IR TX support */
 #define IR_RAW_OTA_BUFFER_MAX  FLIPPER_IR_RAW_MAX_SAMPLES
@@ -103,6 +109,9 @@ static const char *s_dashboard_items[DASHBOARD_ITEM_COUNT] = {
 static void dashboard_screen(void);
 static void browse_directory(const char *path);
 static void show_commands(const char *ir_file_path);
+static void draw_commands(const char *title, uint16_t selection);
+static void show_remote_grid(const char *title, uint16_t *selection);
+static void remote_tx_stop(void);
 static void transmit_command(const ir_universal_cmd_t *cmd);
 static void transmit_raw_command(const ir_universal_cmd_t *cmd);
 static void ir_power_blast(const char *title, const char *const *paths, uint8_t n_paths);
@@ -176,7 +185,16 @@ void ir_universal_deinit(void)
 /*============================================================================*/
 void ir_universal_run(void)
 {
+	s_remote_saved_orientation = m1_screen_orientation;
+	if (m1_screen_orientation == M1_ORIENT_REMOTE) {
+		m1_screen_orientation = M1_ORIENT_NORMAL;
+		m1_southpaw_mode = 0;
+		u8g2_SetDisplayRotation(&m1_u8g2, U8G2_R2);
+	}
 	dashboard_screen();
+	m1_screen_orientation = s_remote_saved_orientation;
+	m1_southpaw_mode = (s_remote_saved_orientation == M1_ORIENT_SOUTHPAW);
+	u8g2_SetDisplayRotation(&m1_u8g2, s_remote_saved_orientation == M1_ORIENT_REMOTE ? U8G2_R1 : (s_remote_saved_orientation == M1_ORIENT_SOUTHPAW ? U8G2_R0 : U8G2_R2));
 } // void ir_universal_run(void)
 
 
@@ -209,7 +227,7 @@ static void draw_dashboard(uint8_t selection)
 	uint8_t i;
 
 	/* Update Remote Mode label to reflect current state */
-	s_dashboard_items[4] = (m1_screen_orientation == M1_ORIENT_REMOTE) ? "Normal Mode" : "Remote Mode";
+	s_dashboard_items[4] = s_classic_remote ? "Layout: Classic" : "Layout: List";
 
 	u8g2_FirstPage(&m1_u8g2);
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
@@ -248,7 +266,7 @@ static void draw_dashboard(uint8_t selection)
 
 	/* Bottom bar */
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Select", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Select", button_ok_8x8);
 
 	m1_u8g2_nextpage();
 } // static void draw_dashboard(uint8_t selection)
@@ -345,19 +363,8 @@ static void dashboard_screen(void)
 						case 3: /* Recent */
 							show_recent_screen();
 							break;
-						case 4: /* Toggle Remote Mode */
-							if (m1_screen_orientation == M1_ORIENT_REMOTE)
-							{
-								m1_screen_orientation = M1_ORIENT_NORMAL;
-								m1_southpaw_mode = 0;
-								u8g2_SetDisplayRotation(&m1_u8g2, U8G2_R2);
-							}
-							else
-							{
-								m1_screen_orientation = M1_ORIENT_REMOTE;
-								m1_southpaw_mode = 0;
-								u8g2_SetDisplayRotation(&m1_u8g2, U8G2_R1);
-							}
+						case 4: /* Choose the saved-remote presentation. */
+							s_classic_remote = !s_classic_remote;
 							break;
 						case 5: /* Power Off TVs — blast every TV power code */
 							power_off_blast();
@@ -446,7 +453,7 @@ static void draw_list_screen(const char *title, uint16_t count, uint16_t selecti
 		char page_info[16];
 		snprintf(page_info, sizeof(page_info), "%u/%u", (unsigned)(selection + 1), (unsigned)count);
 		u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-		m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Open", arrowright_8x8);
+		m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Open", button_ok_8x8);
 	}
 
 	m1_u8g2_nextpage();
@@ -839,6 +846,7 @@ static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 {
 	bool got_name = false;
 	bool got_type = false;
+	bool got_address = false, got_command = false;
 	bool is_parsed = false;
 	bool is_raw_type = false;
 
@@ -879,15 +887,17 @@ static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 		}
 		else if (strcmp(ff_get_key(ff), "address") == 0 && is_parsed)
 		{
-			uint8_t hex_buf[4];
+			uint8_t hex_buf[4] = {0};
 			uint8_t n = ff_parse_hex_bytes(ff_get_value(ff), hex_buf, 4);
+			got_address = (n > 0);
 			cmd->address = (n >= 2) ? (uint16_t)(hex_buf[0] | ((uint16_t)hex_buf[1] << 8))
 			                        : (uint16_t)hex_buf[0];
 		}
 		else if (strcmp(ff_get_key(ff), "command") == 0 && is_parsed)
 		{
-			uint8_t hex_buf[4];
+			uint8_t hex_buf[4] = {0};
 			uint8_t n = ff_parse_hex_bytes(ff_get_value(ff), hex_buf, 4);
+			got_command = (n > 0);
 			cmd->command = (n >= 2) ? (uint16_t)(hex_buf[0] | ((uint16_t)hex_buf[1] << 8))
 			                        : (uint16_t)hex_buf[0];
 		}
@@ -918,14 +928,14 @@ static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 
 	if (got_name && got_type)
 	{
-		if (is_parsed && cmd->protocol != 0)
+		if (is_parsed && cmd->protocol != 0 && got_address && got_command)
 		{
 			cmd->is_raw = false;
 			cmd->flags = 0; /* Full frame (not repeat) */
 			cmd->valid = true;
 			return true;
 		}
-		else if (is_raw_type && cmd->raw_freq > 0)
+		else if (is_raw_type && cmd->raw_freq > 0 && cmd->raw_count > 0)
 		{
 			cmd->is_raw = true;
 			cmd->valid = true;
@@ -969,6 +979,11 @@ static uint16_t parse_ir_file(const char *filepath)
 				break;
 			continue; /* Skip invalid blocks */
 		}
+		if (s_commands[count].is_raw) {
+			for (uint16_t j = 0; j < count; j++)
+				if (s_commands[j].is_raw && !strcmp(s_commands[j].name, s_commands[count].name))
+					s_commands[count].raw_occurrence++;
+		}
 		count++;
 	}
 
@@ -984,13 +999,149 @@ static uint16_t parse_ir_file(const char *filepath)
  * to select and transmit commands.
  */
 /*============================================================================*/
+/* Bound text before centering: the shared text helper aligns but does not clip. */
+static void remote_draw_text(u8g2_t *display, int x, int y, int width,
+                             const char *text, S_M1_text_align_t align)
+{
+    char bounded[BROWSE_NAME_MAX_LEN];
+    size_t length;
+    snprintf(bounded, sizeof(bounded), "%s", text ? text : "");
+    length = strlen(bounded);
+    while (length && u8g2_GetStrWidth(display, bounded) > width) bounded[--length] = '\0';
+    m1_draw_text(display, x, y, width, bounded, align);
+}
+
+/* Stop only hardware owned by this module, including an interrupted raw frame. */
+static void remote_tx_stop(void)
+{
+    if (s_remote_tx_started) {
+        ir_ota_data_tx_active = FALSE;
+        infrared_encode_sys_deinit();
+        s_remote_tx_started = false;
+    }
+    m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
+}
+
+static void draw_commands(const char *title, uint16_t selection)
+{
+    uint16_t first = selection >= 4 ? selection - 3 : 0;
+    char badge[16];
+    u8g2_FirstPage(&m1_u8g2);
+    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+    u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
+    remote_draw_text(&m1_u8g2, 2, 9, 90, title, TEXT_ALIGN_LEFT);
+    u8g2_DrawHLine(&m1_u8g2, 0, 12, 128);
+    for (uint16_t i = first; i < s_cmd_count && i < first + 4; i++) {
+        uint8_t y = 14 + (i - first) * 9;
+        if (i == selection) {
+            u8g2_DrawBox(&m1_u8g2, 0, y, 128, 9);
+            u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+        }
+        remote_draw_text(&m1_u8g2, 3, y + 8, 122, s_commands[i].name, TEXT_ALIGN_LEFT);
+        u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+    }
+    snprintf(badge, sizeof(badge), "%u/%u", (unsigned)selection + 1, (unsigned)s_cmd_count);
+    /* LEFT really opens the grid; center OK sends the selected command. */
+    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Grid", s_remote_tx_started ? "Wait" : "Send", s_remote_tx_started ? NULL : button_ok_8x8);
+    /* Counter is in the header so Back keeps its dedicated physical meaning. */
+    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+    u8g2_DrawBox(&m1_u8g2, 94, 0, 34, 11);
+    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+    remote_draw_text(&m1_u8g2, 94, 9, 32, badge, TEXT_ALIGN_RIGHT);
+    m1_u8g2_nextpage();
+}
+
+static const uint8_t *remote_button_icon(const char *name)
+{
+    switch (ir_remote_icon(name)) {
+    case IR_ICON_POWER: return button_power_18x18;
+    case IR_ICON_MUTE: return button_mute_18x18;
+    case IR_ICON_PLUS: return button_plus_18x18;
+    case IR_ICON_MINUS: return button_minus_18x18;
+    case IR_ICON_UP: return button_up_18x18;
+    case IR_ICON_DOWN: return button_down_18x18;
+    case IR_ICON_PLAY: return button_play_18x18;
+    case IR_ICON_PAUSE: return button_pause_18x18;
+    case IR_ICON_NEXT: return button_next_18x18;
+    case IR_ICON_PREVIOUS: return button_previous_18x18;
+    default: return NULL;
+    }
+}
+
+static void draw_remote_grid(const char *title, uint16_t selection)
+{
+    uint16_t first = (selection / 6) * 6;
+    char badge[16];
+    u8g2_FirstPage(&m1_u8g2);
+    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+    u8g2_SetFont(&m1_u8g2, u8g2_font_tiny5_tf);
+    remote_draw_text(&m1_u8g2, 1, 7, 62, title, TEXT_ALIGN_CENTER);
+    u8g2_DrawHLine(&m1_u8g2, 0, 10, 64);
+    for (uint16_t i = first; i < s_cmd_count && i < first + 6; i++) {
+        uint8_t x = 3 + (i % 2) * 32, y = 14 + ((i - first) / 2) * 30;
+        const uint8_t *icon = remote_button_icon(s_commands[i].name);
+        if (i == selection) {
+            u8g2_DrawBox(&m1_u8g2, x, y, 26, 23);
+            u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+        } else u8g2_DrawFrame(&m1_u8g2, x, y, 26, 23);
+        if (icon) u8g2_DrawXBMP(&m1_u8g2, x + 4, y + 2, 18, 18, icon);
+        else remote_draw_text(&m1_u8g2, x + 2, y + 13, 22, s_commands[i].name, TEXT_ALIGN_CENTER);
+        u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+        remote_draw_text(&m1_u8g2, x, y + 29, 28, s_commands[i].name, TEXT_ALIGN_CENTER);
+    }
+    u8g2_DrawHLine(&m1_u8g2, 0, 105, 64);
+    snprintf(badge, sizeof(badge), "%u/%u%s", (unsigned)selection + 1, (unsigned)s_cmd_count, s_remote_tx_started ? " TX" : "");
+    remote_draw_text(&m1_u8g2, 1, 112, 62, badge, TEXT_ALIGN_CENTER);
+    remote_draw_text(&m1_u8g2, 1, 119, 62, "OK:Send", TEXT_ALIGN_CENTER);
+    remote_draw_text(&m1_u8g2, 1, 127, 62, "Back:List", TEXT_ALIGN_CENTER);
+    m1_u8g2_nextpage();
+}
+
+static void show_remote_grid(const char *title, uint16_t *selection)
+{
+    uint8_t saved = m1_screen_orientation;
+    S_M1_Buttons_Status keys;
+    S_M1_Main_Q_t q;
+    m1_screen_orientation = M1_ORIENT_REMOTE;
+    m1_southpaw_mode = 0;
+    u8g2_SetDisplayRotation(&m1_u8g2, U8G2_R1);
+    xQueueReset(button_events_q_hdl);
+    xQueueReset(main_q_hdl);
+    draw_remote_grid(title, *selection);
+    for (;;) {
+        if (xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(50)) != pdTRUE) {
+            if (s_remote_tx_started && (!ir_ota_data_tx_active || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
+                remote_tx_stop();
+                draw_remote_grid(title, *selection);
+            }
+            continue;
+        }
+        if (q.q_evt_type == Q_EVENT_IRRED_TX) remote_tx_stop();
+        else if (q.q_evt_type == Q_EVENT_KEYPAD && xQueueReceive(button_events_q_hdl, &keys, 0) == pdTRUE) {
+            if (keys.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK) break;
+            if (keys.event[BUTTON_UP_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, 0, -1);
+            else if (keys.event[BUTTON_DOWN_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, 0, 1);
+            else if (keys.event[BUTTON_LEFT_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, -1, 0);
+            else if (keys.event[BUTTON_RIGHT_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, 1, 0);
+            else if (keys.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK && !s_remote_tx_started) transmit_command(&s_commands[*selection]);
+        }
+        draw_remote_grid(title, *selection);
+    }
+    remote_tx_stop();
+    m1_screen_orientation = saved;
+    m1_southpaw_mode = (saved == M1_ORIENT_SOUTHPAW);
+    u8g2_SetDisplayRotation(&m1_u8g2, saved == M1_ORIENT_REMOTE ? U8G2_R1 : (saved == M1_ORIENT_SOUTHPAW ? U8G2_R0 : U8G2_R2));
+    xQueueReset(button_events_q_hdl);
+    xQueueReset(main_q_hdl);
+}
+
+
 static void show_commands(const char *ir_file_path)
 {
 	S_M1_Buttons_Status this_button_status;
 	S_M1_Main_Q_t q_item;
 	BaseType_t ret;
 	uint16_t selection = 0;
-	uint16_t i;
 	const char *short_name;
 	const char *p;
 	char title[BROWSE_NAME_MAX_LEN];
@@ -1028,14 +1179,6 @@ static void show_commands(const char *ir_file_path)
 		}
 	}
 
-	/* Copy command names into s_browse_names for the list renderer */
-	for (i = 0; i < s_cmd_count && i < BROWSE_NAMES_MAX; i++)
-	{
-		strncpy(s_browse_names[i], s_commands[i].name, BROWSE_NAME_MAX_LEN - 1);
-		s_browse_names[i][BROWSE_NAME_MAX_LEN - 1] = '\0';
-	}
-	s_browse_count = (s_cmd_count < BROWSE_NAMES_MAX) ? s_cmd_count : BROWSE_NAMES_MAX;
-
 	/* Extract filename for title */
 	short_name = ir_file_path;
 	p = ir_file_path;
@@ -1048,11 +1191,16 @@ static void show_commands(const char *ir_file_path)
 	strncpy(title, short_name, BROWSE_NAME_MAX_LEN - 1);
 	title[BROWSE_NAME_MAX_LEN - 1] = '\0';
 
-	draw_list_screen(title, s_browse_count, selection);
+	if (s_classic_remote) show_remote_grid(title, &selection);
+	draw_commands(title, selection);
 
 	while (1)
 	{
-		ret = xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY);
+		ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(50));
+		if (s_remote_tx_started && (!ir_ota_data_tx_active || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
+			remote_tx_stop();
+			draw_commands(title, selection);
+		}
 		if (ret == pdTRUE)
 		{
 			if (q_item.q_evt_type == Q_EVENT_KEYPAD)
@@ -1061,6 +1209,8 @@ static void show_commands(const char *ir_file_path)
 
 				if (this_button_status.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK)
 				{
+					remote_tx_stop();
+					m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
 					xQueueReset(main_q_hdl);
 					return; /* Exit to caller */
 				}
@@ -1069,31 +1219,36 @@ static void show_commands(const char *ir_file_path)
 					if (selection > 0)
 						selection--;
 					else
-						selection = s_browse_count - 1;
+						selection = s_cmd_count - 1;
 				}
 				else if (this_button_status.event[BUTTON_DOWN_KP_ID] == BUTTON_EVENT_CLICK)
 				{
-					if (selection < s_browse_count - 1)
+					if (selection < s_cmd_count - 1)
 						selection++;
 					else
 						selection = 0;
 				}
+				else if (this_button_status.event[BUTTON_LEFT_KP_ID] == BUTTON_EVENT_CLICK)
+				{
+					remote_tx_stop();
+					show_remote_grid(title, &selection);
+				}
 				else if (this_button_status.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK)
 				{
-					if (selection < s_cmd_count && s_commands[selection].valid)
+					if (!s_remote_tx_started && selection < s_cmd_count && s_commands[selection].valid)
 					{
 						transmit_command(&s_commands[selection]);
 					}
 				}
 
-				draw_list_screen(title, s_browse_count, selection);
+				draw_commands(title, selection);
 			} /* if (q_item.q_evt_type == Q_EVENT_KEYPAD) */
 			else if (q_item.q_evt_type == Q_EVENT_IRRED_TX)
 			{
 				/* IR TX completed — tear down hardware cleanly */
-				infrared_encode_sys_deinit();
+				remote_tx_stop();
 				m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
-				draw_list_screen(title, s_browse_count, selection);
+				draw_commands(title, selection);
 			}
 		} /* if (ret == pdTRUE) */
 	} /* while (1) */
@@ -1145,7 +1300,7 @@ static void transmit_command(const ir_universal_cmd_t *cmd)
 	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
 	u8g2_DrawStr(&m1_u8g2, 10, 15, "Transmitting...");
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-	u8g2_DrawStr(&m1_u8g2, 10, 30, cmd->name);
+	remote_draw_text(&m1_u8g2, 1, 30, u8g2_GetDisplayWidth(&m1_u8g2) - 2, cmd->name, TEXT_ALIGN_LEFT);
 	snprintf(tx_info, sizeof(tx_info), "Addr:0x%04X Cmd:0x%04X", cmd->address, cmd->command);
 	u8g2_DrawStr(&m1_u8g2, 4, 45, tx_info);
 	m1_u8g2_nextpage();
@@ -1157,6 +1312,8 @@ static void transmit_command(const ir_universal_cmd_t *cmd)
 	s_tx_irmp_data.flags = cmd->flags;
 
 	/* Initialize the IR encoder system */
+	s_remote_tx_started = true;
+	s_remote_tx_tick = xTaskGetTickCount();
 	infrared_encode_sys_init();
 
 	/* Generate OTA data from the IRMP_DATA structure */
@@ -1206,7 +1363,7 @@ void ir_universal_play_file(const char *path)
 			    q.q_evt_type == Q_EVENT_IRRED_TX)
 				break;   /* TX finished */
 		}
-		infrared_encode_sys_deinit();   /* forces carrier off + deinits timers */
+		remote_tx_stop();   /* forces carrier off + deinits timers */
 	}
 	/* Turn the TX activity LED back off (transmit_command turned it on). */
 	m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
@@ -1232,6 +1389,7 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 	uint32_t duration;
 	char tx_info[32];
 	bool found = false;
+	uint16_t occurrence = 0;
 
 	if (cmd == NULL || !cmd->valid || !cmd->is_raw)
 		return;
@@ -1254,8 +1412,10 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 		if (strcmp(s_raw_tx_signal.name, cmd->name) == 0 &&
 		    s_raw_tx_signal.type == FLIPPER_IR_SIGNAL_RAW)
 		{
-			found = true;
-			break;
+			if (occurrence++ == cmd->raw_occurrence) {
+				found = true;
+				break;
+			}
 		}
 	}
 	ff_close(&ff);
@@ -1279,7 +1439,7 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
 	u8g2_DrawStr(&m1_u8g2, 10, 15, "Transmitting...");
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-	u8g2_DrawStr(&m1_u8g2, 10, 30, cmd->name);
+	remote_draw_text(&m1_u8g2, 1, 30, u8g2_GetDisplayWidth(&m1_u8g2) - 2, cmd->name, TEXT_ALIGN_LEFT);
 	snprintf(tx_info, sizeof(tx_info), "Raw %luHz %u smp",
 	         (unsigned long)s_raw_tx_signal.raw.frequency,
 	         (unsigned)s_raw_tx_signal.raw.sample_count);
@@ -1308,6 +1468,8 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 	}
 
 	/* Initialize the IR encoder hardware (TIM1 carrier + TIM16 baseband) */
+	s_remote_tx_started = true;
+	s_remote_tx_tick = xTaskGetTickCount();
 	infrared_encode_sys_init();
 
 	/* Set carrier frequency for this raw signal */

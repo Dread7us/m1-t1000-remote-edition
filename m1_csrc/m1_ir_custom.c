@@ -256,7 +256,7 @@ static void ir_custom_draw_result(bool ok, const char *name)
 		u8g2_DrawStr(&m1_u8g2, 4, 34, "Create failed");
 	}
 
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "", NULL);
 
 	m1_u8g2_nextpage();
 }
@@ -435,7 +435,7 @@ static void ir_custom_draw_list(uint16_t selection, uint16_t total)
 
 	{
 		const char *action = (selection == 0) ? "New" : "Open";
-		m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", action, arrowright_8x8);
+		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", action, button_ok_8x8);
 	}
 
 	m1_u8g2_nextpage();
@@ -550,7 +550,7 @@ static void ir_custom_draw_remote_menu(const char *name, uint8_t selection)
 		}
 	}
 
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Select", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Select", button_ok_8x8);
 	m1_u8g2_nextpage();
 }
 
@@ -578,20 +578,20 @@ static void ir_custom_draw_learn(ir_cap_state_t state, const IRMP_DATA *data, ui
 		u8g2_DrawStr(&m1_u8g2, 4, 34, flipper_ir_irmp_to_proto(data->protocol));
 		snprintf(line, sizeof(line), "A:%04X C:%04X", data->address, data->command);
 		u8g2_DrawStr(&m1_u8g2, 4, 44, line);
-		m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Save", arrowright_8x8);
+		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Save", button_ok_8x8);
 	}
 	else if (state == IR_CAP_RAW)
 	{
 		u8g2_DrawStr(&m1_u8g2, 4, 24, "Captured (raw):");
 		snprintf(line, sizeof(line), "%u samples", (unsigned)raw_count);
 		u8g2_DrawStr(&m1_u8g2, 4, 38, line);
-		m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Save", arrowright_8x8);
+		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Save", button_ok_8x8);
 	}
 	else
 	{
 		u8g2_DrawStr(&m1_u8g2, 4, 26, "Point remote at M1,");
 		u8g2_DrawStr(&m1_u8g2, 4, 38, "press a button...");
-		m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "", arrowright_8x8);
+		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "", NULL);
 	}
 	m1_u8g2_nextpage();
 }
@@ -609,7 +609,7 @@ static void ir_custom_draw_message(const char *l1, const char *l2)
 		u8g2_DrawStr(&m1_u8g2, 4, 28, l1);
 	if (l2 != NULL)
 		u8g2_DrawStr(&m1_u8g2, 4, 40, l2);
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "", NULL);
 	m1_u8g2_nextpage();
 }
 
@@ -769,7 +769,7 @@ static void ir_custom_draw_button_list(const char *name, uint16_t selection, uin
 	if (total == 0)
 	{
 		u8g2_DrawStr(&m1_u8g2, 4, IR_CUSTOM_LIST_START_Y + 8, "(no buttons)");
-		m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "", arrowright_8x8);
+		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "", NULL);
 		m1_u8g2_nextpage();
 		return;
 	}
@@ -801,7 +801,7 @@ static void ir_custom_draw_button_list(const char *name, uint16_t selection, uin
 		}
 	}
 
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Edit", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Edit", button_ok_8x8);
 	m1_u8g2_nextpage();
 }
 
@@ -838,7 +838,7 @@ static void ir_custom_draw_action_menu(const char *name, uint8_t selection)
 		}
 	}
 
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Select", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Select", button_ok_8x8);
 	m1_u8g2_nextpage();
 }
 
@@ -886,7 +886,7 @@ static bool ir_custom_confirm(const char *l1, const char *l2)
 		u8g2_DrawStr(&m1_u8g2, 4, 24, l1);
 	if (l2 != NULL)
 		u8g2_DrawStr(&m1_u8g2, 4, 36, l2);
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Cancel", "Delete", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Cancel", "Delete", button_ok_8x8);
 	m1_u8g2_nextpage();
 
 	while (1)

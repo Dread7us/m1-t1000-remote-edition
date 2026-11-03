@@ -63,7 +63,7 @@
 
 static const uint8_t s_brightness_values[] = { 0, 64, 128, 192, 255 };
 static const char *s_brightness_text[] = { "Off", "Low", "Med", "High", "Max" };
-static const char *s_orient_text[] = { "Normal", "Southpaw", "Remote" };
+static const char *s_orient_text[] = { "Normal", "Southpaw" };
 static const char *s_sleep_text[] = { "30s", "1 min", "5 min", "10 min", "15 min", "Never" };
 static const char *s_bl_type_text[] = { "Stock", "RGB" };
 
@@ -104,6 +104,8 @@ void settings_save_to_sd(void);
 /*============================================================================*/
 static void settings_apply_orientation(uint8_t orient)
 {
+    /* Portrait belongs to the IR remote view; system screens are 128x64. */
+    if (orient != M1_ORIENT_SOUTHPAW) orient = M1_ORIENT_NORMAL;
     m1_screen_orientation = orient;
     m1_southpaw_mode = (orient == M1_ORIENT_SOUTHPAW) ? 1 : 0;
 
@@ -253,7 +255,7 @@ void settings_lcd_and_notifications(void)
             else if (sel == LCD_SET_LED)
                 m1_led_notify_on = !m1_led_notify_on;
             else if (sel == LCD_SET_ORIENT)
-                settings_apply_orientation((m1_screen_orientation == 0) ? 2 : (m1_screen_orientation - 1));
+                settings_apply_orientation(m1_screen_orientation == M1_ORIENT_NORMAL ? M1_ORIENT_SOUTHPAW : M1_ORIENT_NORMAL);
             else if (sel == LCD_SET_SLEEP)
                 m1_sleep_timeout_idx = (m1_sleep_timeout_idx == 0) ? 5 : (m1_sleep_timeout_idx - 1);
             else if (sel == LCD_SET_TIMEZONE)
@@ -272,7 +274,7 @@ void settings_lcd_and_notifications(void)
             else if (sel == LCD_SET_LED)
                 m1_led_notify_on = !m1_led_notify_on;
             else if (sel == LCD_SET_ORIENT)
-                settings_apply_orientation((m1_screen_orientation + 1) % 3);
+                settings_apply_orientation(m1_screen_orientation == M1_ORIENT_NORMAL ? M1_ORIENT_SOUTHPAW : M1_ORIENT_NORMAL);
             else if (sel == LCD_SET_SLEEP)
                 m1_sleep_timeout_idx = (m1_sleep_timeout_idx >= 5) ? 0 : (m1_sleep_timeout_idx + 1);
             else if (sel == LCD_SET_TIMEZONE)
@@ -520,7 +522,7 @@ static void settings_system_draw(uint8_t sel)
         }
     }
 
-    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Select", arrowright_8x8);
+    m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Select", button_ok_8x8);
     m1_u8g2_nextpage();
 }
 
@@ -1070,7 +1072,7 @@ static void backlight_menu_draw(uint8_t sel)
         m1_draw_text(&m1_u8g2, 78, y, 38, value, TEXT_ALIGN_RIGHT);
     }
 
-    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "OK=Edit", arrowright_8x8);
+    m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "OK=Edit", button_ok_8x8);
     m1_u8g2_nextpage();
 }
 

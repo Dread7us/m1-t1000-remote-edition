@@ -279,7 +279,7 @@ void firmware_update_gui_update(const S_M1_Menu_t *phmenu, uint8_t sel_item)
     			break;
     	} // switch ( sel_item )
     	if (line1[0]) m1_draw_text(&m1_u8g2, 8, 49, 114, line1, TEXT_ALIGN_LEFT);
-    	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Open", arrowright_8x8);
+        m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Open", button_ok_8x8);
     } while (m1_u8g2_nextpage());
 
 } // void firmware_update_gui_update(const S_M1_Menu_t *phmenu, uint8_t sel_item)

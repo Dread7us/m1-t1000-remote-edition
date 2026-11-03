@@ -331,7 +331,7 @@ static void bt_scan_detail_screen(ble_scanlist_t *dev)
 			snprintf(prn_msg, sizeof(prn_msg), "RSSI:%ddBm Type:%u", dev->rssi, dev->addr_type);
 			m1_draw_text(&m1_u8g2, 8, y, 114, prn_msg, TEXT_ALIGN_LEFT);
 
-			m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Save", arrowright_8x8);
+			m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Save", button_ok_8x8);
 			m1_u8g2_nextpage();
 		}
 
@@ -472,7 +472,7 @@ void bluetooth_scan(void)
 			}
 
 			snprintf(page_info, sizeof(page_info), "%d/%d", selection + 1, count);
-			m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Info", arrowright_8x8);
+			m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Info", button_ok_8x8);
 			m1_u8g2_nextpage();
 		}
 
@@ -562,7 +562,7 @@ static void bt_saved_detail_screen(uint8_t dev_idx)
 				menu_sel == 1 ? ">" : " ");
 			m1_draw_text(&m1_u8g2, 8, y, 114, prn_msg, TEXT_ALIGN_LEFT);
 
-			m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "OK", arrowright_8x8);
+			m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "OK", button_ok_8x8);
 			m1_u8g2_nextpage();
 		}
 
@@ -661,7 +661,7 @@ void bluetooth_saved_devices(void)
 			{
 				bt_draw_title_bar("Saved Devices");
 				u8g2_DrawStr(&m1_u8g2, 2, 30, "No saved devices");
-				m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "OK", arrowright_8x8);
+				m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "OK", button_ok_8x8);
 				m1_u8g2_nextpage();
 			}
 			else
@@ -688,7 +688,7 @@ void bluetooth_saved_devices(void)
 				}
 
 				snprintf(page_info, sizeof(page_info), "%d/%d", selection + 1, s_saved_count);
-				m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Open", arrowright_8x8);
+				m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Open", button_ok_8x8);
 				m1_u8g2_nextpage();
 			}
 		}
@@ -824,7 +824,7 @@ void bluetooth_info(void)
 		m1_draw_text(&m1_u8g2, 8, y, 114, "Not connected", TEXT_ALIGN_LEFT);
 	}
 
-	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "OK", arrowright_8x8);
+	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "OK", button_ok_8x8);
 	m1_u8g2_nextpage();
 
 	/* Wait for BACK */

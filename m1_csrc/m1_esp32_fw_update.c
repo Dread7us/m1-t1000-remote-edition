@@ -1112,7 +1112,7 @@ void setting_esp32_gui_update(const S_M1_Menu_t *phmenu, uint8_t sel_item)
 	if (esp32_menu_scroll + 2 < n_items)
 		u8g2_DrawTriangle(&m1_u8g2, 60, 46, 66, 46, 63, 49);
 	if (line1[0]) m1_draw_text(&m1_u8g2, 8, 46, 114, line1, TEXT_ALIGN_LEFT);
-    	m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Open", arrowright_8x8);
+        m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Open", button_ok_8x8);
     } while (m1_u8g2_nextpage());
 
 } // void setting_esp32_gui_update(const S_M1_Menu_t *phmenu, uint8_t sel_item)

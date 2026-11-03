@@ -103,7 +103,7 @@ static void file_tools_draw(uint8_t sel)
         y = (uint8_t)(y + FILE_TOOLS_ROW_HEIGHT);
     }
 
-    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Open", arrowright_8x8);
+    m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Open", button_ok_8x8);
     m1_u8g2_nextpage();
 }
 

@@ -409,7 +409,7 @@ static void apps_draw_list(const char *title, uint16_t count, uint16_t selection
         char page_info[16];
         snprintf(page_info, sizeof(page_info), "%u/%u", (unsigned)(selection + 1), (unsigned)count);
         u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-        m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Run", arrowright_8x8);
+        m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, page_info, "Run", button_ok_8x8);
     }
 
     m1_u8g2_nextpage();
