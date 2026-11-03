@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM = "https://github.com/dagnazty/M1_T-1000.git"
 
 def git(*args, check=True):
-    result = subprocess.run(["git", *args], cwd=ROOT, text=True, capture_output=True)
+    result = subprocess.run(["git", *args], cwd=ROOT, text=True, encoding="utf-8", capture_output=True)
     if check and result.returncode:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
     return result

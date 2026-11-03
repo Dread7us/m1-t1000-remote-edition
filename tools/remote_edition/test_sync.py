@@ -8,7 +8,7 @@ sync = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync)
 
 def git(path, *args):
-    return subprocess.check_output(["git", "-C", str(path), *args], text=True, stderr=subprocess.DEVNULL).strip()
+    return subprocess.check_output(["git", "-C", str(path), *args], text=True, encoding="utf-8", stderr=subprocess.DEVNULL).strip()
 
 class SyncTests(unittest.TestCase):
     def fixture(self, root):
@@ -34,13 +34,13 @@ class SyncTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="m1-sync-test-") as directory:
             upstream, fork = self.fixture(Path(directory))
             before = git(fork, "rev-parse", "main")
-            (upstream / "README.md").write_text("Updated upstream README\n")
+            (upstream / "README.md").write_text("Updated upstream README — 更新\n", encoding="utf-8")
             (upstream / "source.c").write_text("updated upstream source\n")
             git(upstream, "add", "README.md", "source.c"); git(upstream, "commit", "-m", "Upstream update")
             self.assertEqual(sync.sync(), 0)
             self.assertEqual(git(fork, "rev-parse", "main"), before)
             self.assertEqual((fork / "README.md").read_text(), "Our edition README\n")
-            self.assertEqual((fork / "README.upstream.md").read_text(), "Updated upstream README\n")
+            self.assertEqual((fork / "README.upstream.md").read_text(encoding="utf-8"), "Updated upstream README — 更新\n")
             self.assertEqual((fork / "our-feature.c").read_text(), "keep our feature\n")
             self.assertEqual((fork / "source.c").read_text(), "updated upstream source\n")
             self.assertEqual(json.loads((fork / "remote-edition.json").read_text())["upstream_commit"], git(upstream, "rev-parse", "HEAD"))
