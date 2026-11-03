@@ -163,5 +163,21 @@ for name,command in [('Power',2),('Vol_up',7)]:
 (out/'IR/TV/Samsung.ir').write_text(library)
 (out/'IR/TV/Other.ir').write_text(library)
 exe=compile('builder',[out/'builder.c',*common]);print(run([exe]))
+system=(src/'m1_system.c').read_text()
+start=system.index('void startup_info_screen_display(const char *scr_text)\n{')
+end=system.index('\n} //',start)+2
+splash=(repo/'tools/remote_edition/splash_prelude.h').read_text()+'\n'+system[start:end]+'''
+int main(void) {
+ assert(sizeof(m1_splash_avatar_48x38)==228);
+ startup_info_screen_display("");
+ startup_info_screen_display("UPDATE COMPLETED!");
+ startup_info_screen_display("ROLLBACK COMPLETED!");
+ assert(logo_seen==3 && title_seen==3 && footer_seen==3 && line_seen==0);
+ puts("PASS: actual splash shows the avatar, title and version/status in bounds without a crossing divider");
+ return 0;
+}
+'''
+(out/'splash.c').write_text(splash)
+exe=compile('splash',[out/'splash.c']);print(run([exe]))
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

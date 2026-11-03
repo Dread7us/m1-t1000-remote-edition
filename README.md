@@ -29,6 +29,7 @@ This fork documents our additions; credit for the broader firmware belongs upstr
 
 | Addition | Result |
 |---|---|
+| **Avatar splash screen** | A 48×38 monochrome emblem adapted from Dread7us's current GitHub avatar. Removes the divider crossing the M1 T-1000 title; retains the title and version/status display. [Preview and artwork details](documentation/remote-edition/avatar-splash.md). |
 | **Consistent portrait remotes** | Power / Mute across the top; Volume + / Channel + below; Volume − / Channel − on the third row, independent of file order. Input takes Mute's place when available; absent controls leave vacant positions. All remaining buttons follow on later pages. |
 | **Whole-remote learning** | Learn the first button, accept/edit a suggested remote title, name the button, then choose **Add next** to keep building the same remote. |
 | **My Remotes manager** | Play, add buttons, edit button names, rename an entire remote, or confirm deletion. Includes older files from `IR/Learned` and custom remotes at the IR root. |
@@ -90,7 +91,7 @@ Recognized library functions can suggest the button name even if you pressed a d
 | Physical M1 | Owner confirmed T-1000 boots and portrait buttons work |
 | Physical IR response / every other function | **Not certified** by these tests |
 
-The physical confirmation applies to revision 1 installed on the owner's M1. Revision 2's semantic layout and learning workflow require fresh physical confirmation. A future upstream merge also needs fresh validation. The T-1000 USB RPC diagnostic did not respond during the post-install check; it is not marked verified.
+The owner confirmed revision 2 boots and its semantic remote layout is correct. Grouped learning and revision 3's avatar splash still require physical confirmation. A future upstream merge also needs fresh validation. The T-1000 USB RPC diagnostic did not respond during the post-install check; it is not marked verified.
 
 ## Build and check
 

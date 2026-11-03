@@ -21,6 +21,7 @@
 #include "m1_tasks.h"
 #include "m1_branding.h"
 #include "m1_display.h"
+#include "m1_splash_art.h"
 #include "m1_power_ctl.h"
 #include "m1_t1000_version.h"
 #include "m1_fw_update_bl.h"
@@ -923,8 +924,7 @@ void startup_info_screen_display(const char *scr_text)
 	char fw_ver[24];
 	uint8_t x0;
 	uint16_t text_w;
-	const uint8_t logo_x = (M1_LCD_DISPLAY_WIDTH - 40U) / 2U;
-	const uint8_t footer_y = 46U;
+	const uint8_t logo_x = (M1_LCD_DISPLAY_WIDTH - M1_SPLASH_ART_WIDTH) / 2U;
 
 	u8g2_SetPowerSave(&m1_u8g2, false);
 
@@ -933,8 +933,7 @@ void startup_info_screen_display(const char *scr_text)
 	{
 		u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		u8g2_DrawFrame(&m1_u8g2, 0, 0, M1_LCD_DISPLAY_WIDTH, M1_LCD_DISPLAY_HEIGHT);
-		u8g2_DrawHLine(&m1_u8g2, 12, footer_y - 2, 104);
-		u8g2_DrawXBMP(&m1_u8g2, logo_x, 4, 40, 32, m1_logo_40x32);
+		u8g2_DrawXBMP(&m1_u8g2, logo_x, 3, M1_SPLASH_ART_WIDTH, M1_SPLASH_ART_HEIGHT, m1_splash_avatar_48x38);
 
 		strcpy(fw_ver, T1000_VERSION_STRING);
 
