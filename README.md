@@ -37,7 +37,7 @@ This fork documents our additions; credit for the broader firmware belongs upstr
 
 <sub>Enlarged preview rendered from the actual firmware code and fonts—not a device photograph.</sub>
 
-A crisp **48×38 monochrome avatar emblem**, a centered **M1 T-1000** title, and a clear version line. The divider that crossed the title has been removed.
+A refreshed splash screen featuring the new **monochrome avatar emblem** and **M1 T-1000** branding.
 
 [Artwork, native-size asset, and layout details](documentation/remote-edition/avatar-splash.md)
 
@@ -49,7 +49,7 @@ A crisp **48×38 monochrome avatar emblem**, a centered **M1 T-1000** title, and
 
 | Addition | Result |
 |---|---|
-| **Avatar splash screen** | A 48×38 monochrome emblem adapted from Dread7us's current GitHub avatar. Removes the divider crossing the M1 T-1000 title; retains the title and version/status display. [Preview and artwork details](documentation/remote-edition/avatar-splash.md). |
+| **Avatar splash screen** | A personalized monochrome avatar emblem and refreshed startup layout. [Preview and artwork details](documentation/remote-edition/avatar-splash.md). |
 | **Consistent portrait remotes** | Power / Mute across the top; Volume + / Channel + below; Volume − / Channel − on the third row, independent of file order. Input takes Mute's place when available; absent controls leave vacant positions. All remaining buttons follow on later pages. |
 | **Whole-remote learning** | Learn the first button, accept/edit a suggested remote title, name the button, then choose **Add next** to keep building the same remote. |
 | **Skip unavailable controls** | Press **Right → Skip** to bypass controls your remote lacks. The choice is remembered per remote as an ignorable `.ir` comment, survives edits/renames, and creates no empty buttons. |
