@@ -37,6 +37,8 @@
 #include "flipper_file.h"
 #include "flipper_ir.h"
 #include "ff.h"
+#include "m1_ir_remote_view.h"
+#include "m1_watchdog.h"
 
 /*************************** D E F I N E S ************************************/
 
@@ -74,6 +76,7 @@ typedef enum {
 
 static char     s_remote_names[IR_CUSTOM_MAX_REMOTES][IR_CUSTOM_DISP_NAME_LEN];
 static uint16_t s_remote_count;
+static char s_remote_paths[IR_CUSTOM_MAX_REMOTES][IR_CUSTOM_PATH_MAX_LEN];
 
 /* Button-name cache for the edit list (one remote at a time). */
 static char     s_button_names[IR_CUSTOM_MAX_BUTTONS][IR_CUSTOM_DISP_NAME_LEN];
@@ -86,7 +89,7 @@ static flipper_ir_signal_t s_learn_raw;
 static flipper_ir_signal_t s_scan_sig;
 
 /* Per-remote action menu. */
-static const char *const s_remote_menu_items[] = { "Play Buttons", "Learn Button", "Edit Buttons" };
+static const char *const s_remote_menu_items[] = { "Play Remote", "Add Buttons", "Edit Buttons", "Rename Remote", "Delete Remote" };
 #define IR_CUSTOM_REMOTE_MENU_COUNT \
 	((uint8_t)(sizeof(s_remote_menu_items) / sizeof(s_remote_menu_items[0])))
 
@@ -100,18 +103,17 @@ static const char *const s_button_action_items[] = { "Rename", "Delete" };
 static void        ir_custom_sanitize_name(const char *in, char *out, size_t out_len);
 static bool        ir_custom_unique_path(const char *name, char *out, size_t out_len);
 static bool        ir_custom_create_empty(const char *name, char *out_path, size_t out_len);
-static void        ir_custom_draw_result(bool ok, const char *name);
 static void        ir_custom_wait_key(void);
 static void        ir_custom_create_flow(void);
 static void        ir_custom_scan_remotes(void);
 static const char *ir_custom_item_text(uint16_t idx);
 static void        ir_custom_draw_list(uint16_t selection, uint16_t total);
-static bool        ir_custom_append_parsed(const char *path, const IRMP_DATA *data);
-static bool        ir_custom_append_raw(const char *path, flipper_ir_signal_t *sig);
+static bool        ir_custom_append_parsed(char *path, const IRMP_DATA *data);
+static bool        ir_custom_append_raw(char *path, flipper_ir_signal_t *sig);
 static void        ir_custom_draw_remote_menu(const char *name, uint8_t selection);
 static void        ir_custom_draw_learn(ir_cap_state_t state, const IRMP_DATA *data, uint16_t raw_count);
 static void        ir_custom_draw_message(const char *l1, const char *l2);
-static void        ir_custom_learn_button(const char *path);
+static void        ir_custom_learn_button(char *path);
 static void        ir_custom_scan_buttons(const char *path);
 static void        ir_custom_draw_button_list(const char *name, uint16_t selection, uint16_t total);
 static void        ir_custom_draw_action_menu(const char *name, uint8_t selection);
@@ -188,16 +190,19 @@ static bool ir_custom_unique_path(const char *name, char *out, size_t out_len)
 	n = snprintf(out, out_len, "%s/%s.ir", IR_CUSTOM_DIR, name);
 	if (n < 0 || n >= (int)out_len)
 		return false;
-	if (f_stat(out, &fno) != FR_OK)
-		return true;   /* no such file -> unique */
+	FRESULT found = f_stat(out, &fno);
+	if (found == FR_NO_FILE || found == FR_NO_PATH)
+		return true;
+	if (found != FR_OK) return false;
 
 	for (i = 1; i <= IR_CUSTOM_MAX_DEDUP; i++)
 	{
 		n = snprintf(out, out_len, "%s/%s_%u.ir", IR_CUSTOM_DIR, name, i);
 		if (n < 0 || n >= (int)out_len)
 			return false;
-		if (f_stat(out, &fno) != FR_OK)
-			return true;
+		found = f_stat(out, &fno);
+		if (found == FR_NO_FILE || found == FR_NO_PATH) return true;
+		if (found != FR_OK) return false;
 	}
 
 	return false;   /* too many name collisions */
@@ -235,31 +240,7 @@ static bool ir_custom_create_empty(const char *name, char *out_path, size_t out_
 /**
  * @brief  Draw the create-result screen (success shows the remote name).
  */
-static void ir_custom_draw_result(bool ok, const char *name)
-{
-	m1_u8g2_firstpage();
 
-	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
-
-	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
-	u8g2_DrawStr(&m1_u8g2, 2, 10, "Create Remote");
-	u8g2_DrawHLine(&m1_u8g2, 0, 12, 128);
-
-	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-	if (ok)
-	{
-		u8g2_DrawStr(&m1_u8g2, 4, 28, "Created:");
-		u8g2_DrawStr(&m1_u8g2, 4, 40, (name != NULL) ? name : "");
-	}
-	else
-	{
-		u8g2_DrawStr(&m1_u8g2, 4, 34, "Create failed");
-	}
-
-	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "", NULL);
-
-	m1_u8g2_nextpage();
-}
 
 /*============================================================================*/
 /**
@@ -301,24 +282,13 @@ static void ir_custom_wait_key(void)
  */
 static void ir_custom_create_flow(void)
 {
-	char    default_name[IR_CUSTOM_NAME_MAX_LEN] = "Remote";
-	char    entered[IR_CUSTOM_NAME_MAX_LEN];
-	char    name[IR_CUSTOM_NAME_MAX_LEN];
-	char    path[IR_CUSTOM_PATH_MAX_LEN];
-	uint8_t got;
-	bool    ok;
+    char path[IR_CUSTOM_PATH_MAX_LEN] = "";
+    ir_custom_learn_button(path);
+}
 
-	entered[0] = '\0';
-
-	got = m1_vkb_get_filename("Remote name:", default_name, entered);
-	if (got == 0)
-		return;   /* cancelled — nothing written */
-
-	ir_custom_sanitize_name(entered, name, sizeof(name));
-	ok = ir_custom_create_empty(name, path, sizeof(path));
-
-	ir_custom_draw_result(ok, name);
-	ir_custom_wait_key();
+void ir_custom_learn_new(void)
+{
+    ir_custom_create_flow();
 }
 
 /*============================================================================*/
@@ -329,48 +299,22 @@ static void ir_custom_create_flow(void)
  */
 static void ir_custom_scan_remotes(void)
 {
-	DIR     dir;
-	FILINFO fno;
-	FRESULT res;
-
-	s_remote_count = 0;
-
-	f_mkdir(IR_CUSTOM_DIR);
-
-	res = f_opendir(&dir, IR_CUSTOM_DIR);
-	if (res != FR_OK)
-		return;
-
-	while (s_remote_count < IR_CUSTOM_MAX_REMOTES)
-	{
-		size_t len;
-		size_t copy;
-
-		res = f_readdir(&dir, &fno);
-		if (res != FR_OK || fno.fname[0] == '\0')
-			break;
-
-		/* Skip hidden entries and category sub-directories. */
-		if (fno.fname[0] == '.')
-			continue;
-		if (fno.fattrib & AM_DIR)
-			continue;
-
-		/* Only ".ir" files. */
-		len = strlen(fno.fname);
-		if (len < 4 || strcmp(&fno.fname[len - 3], ".ir") != 0)
-			continue;
-
-		/* Store the name without the ".ir" extension for display. */
-		copy = len - 3;
-		if (copy > IR_CUSTOM_DISP_NAME_LEN - 1)
-			copy = IR_CUSTOM_DISP_NAME_LEN - 1;
-		memcpy(s_remote_names[s_remote_count], fno.fname, copy);
-		s_remote_names[s_remote_count][copy] = '\0';
-		s_remote_count++;
-	}
-
-	f_closedir(&dir);
+    const char *folders[] = {IR_CUSTOM_DIR, IR_CUSTOM_DIR "/Learned"};
+    s_remote_count = 0;
+    f_mkdir(IR_CUSTOM_DIR);
+    for (unsigned f = 0; f < 2; f++) {
+        DIR directory; FILINFO info;
+        if (f_opendir(&directory,folders[f]) != FR_OK) continue;
+        while (s_remote_count < IR_CUSTOM_MAX_REMOTES && f_readdir(&directory,&info) == FR_OK && info.fname[0]) {
+            size_t n = strlen(info.fname);
+            if (info.fname[0] == '.' || (info.fattrib & AM_DIR) || n < 4 ||
+                info.fname[n-3] != '.' || (info.fname[n-2] != 'i' && info.fname[n-2] != 'I') || (info.fname[n-1] != 'r' && info.fname[n-1] != 'R')) continue;
+            if (snprintf(s_remote_paths[s_remote_count],IR_CUSTOM_PATH_MAX_LEN,"%s/%s",folders[f],info.fname) >= IR_CUSTOM_PATH_MAX_LEN) continue;
+            snprintf(s_remote_names[s_remote_count],IR_CUSTOM_DISP_NAME_LEN,"%.*s",(int)(n-3),info.fname);
+            s_remote_count++;
+        }
+        f_closedir(&directory);
+    }
 }
 
 /*============================================================================*/
@@ -450,76 +394,156 @@ static void ir_custom_draw_list(uint16_t selection, uint16_t total)
  * @param  data  decoded IRMP signal
  * @return true if a button was appended
  */
-static bool ir_custom_append_parsed(const char *path, const IRMP_DATA *data)
+/* Default to the next standard control that has not been learned yet. */
+static void ir_custom_next_button(const char *path, char *out, size_t length)
 {
-	flipper_file_t      ff;
-	flipper_ir_signal_t sig;
-	char                default_name[IR_CUSTOM_NAME_MAX_LEN];
-	char                entered[IR_CUSTOM_NAME_MAX_LEN];
-	uint8_t             got;
-	bool                ok;
-
-	snprintf(default_name, sizeof(default_name), "%s_%04X",
-	         flipper_ir_irmp_to_proto(data->protocol), data->command);
-	entered[0] = '\0';
-
-	got = m1_vkb_get_filename("Button name:", default_name, entered);
-	if (got == 0)
-		return false;   /* cancelled the append */
-
-	memset(&sig, 0, sizeof(sig));
-	sig.type = FLIPPER_IR_SIGNAL_PARSED;
-	sig.valid = true;
-	ir_custom_sanitize_name(entered, sig.name, sizeof(sig.name));
-	sig.parsed.protocol = data->protocol;
-	sig.parsed.address  = data->address;
-	sig.parsed.command  = data->command;
-	sig.parsed.flags    = data->flags;
-
-	if (!flipper_ir_open_append(&ff, path))
-		return false;
-
-	ok = flipper_ir_write_signal(&ff, &sig);
-	ff_close(&ff);
-	return ok;
+    static const char *const names[] = {"Power", "Mute", "Vol_up", "Ch_up", "Vol_down", "Ch_down"};
+    const ir_remote_icon_t roles[] = {IR_ICON_POWER, IR_ICON_MUTE, IR_ICON_PLUS, IR_ICON_UP, IR_ICON_MINUS, IR_ICON_DOWN};
+    bool seen[6] = {false};
+    flipper_file_t ff;
+    if (path[0] && flipper_ir_open(&ff, path)) {
+        while (flipper_ir_read_signal(&ff, &s_scan_sig))
+            for (unsigned i = 0; i < 6; i++) if (ir_remote_icon(s_scan_sig.name) == roles[i]) seen[i] = true;
+        ff_close(&ff);
+    }
+    for (unsigned i = 0; i < 6; i++) if (!seen[i]) { snprintf(out, length, "%s", names[i]); return; }
+    snprintf(out, length, "Button_%u", (unsigned)flipper_ir_count_signals(path) + 1);
 }
 
-/*============================================================================*/
-/**
- * @brief  Append an already-accumulated raw signal to a remote file. Prompts
- *         for a button name; escaping the keyboard aborts the append.
- * @param  path  full path to the remote's .ir file
- * @param  sig   finalized raw signal (name is overwritten by the entered name)
- * @return true if a button was appended
- */
-static bool ir_custom_append_raw(const char *path, flipper_ir_signal_t *sig)
+/* An exact, unambiguous library match can suggest a device name. Protocol
+   labels alone do not establish a manufacturer or model. */
+static void ir_custom_suggest_identity(const flipper_ir_signal_t *signal,
+                                      char *title, char *button)
 {
-	flipper_file_t ff;
-	char           default_name[IR_CUSTOM_NAME_MAX_LEN] = "Raw";
-	char           entered[IR_CUSTOM_NAME_MAX_LEN];
-	uint8_t        got;
-	bool           ok;
-
-	entered[0] = '\0';
-
-	got = m1_vkb_get_filename("Button name:", default_name, entered);
-	if (got == 0)
-		return false;   /* cancelled the append */
-
-	ir_custom_sanitize_name(entered, sig->name, sizeof(sig->name));
-
-	if (!flipper_ir_open_append(&ff, path))
-		return false;
-
-	ok = flipper_ir_write_signal(&ff, sig);
-	ff_close(&ff);
-	return ok;
+    static const char *const folders[] = {"TV", "Audio", "Projector", "Bluray", "Monitor", "Streaming", "Fan", "LEDs", "AC"};
+    char candidate[IR_CUSTOM_NAME_MAX_LEN] = "";
+    bool ambiguous = false, button_ambiguous = false;
+    char matched_button[IR_CUSTOM_NAME_MAX_LEN] = "";
+    snprintf(title, IR_CUSTOM_NAME_MAX_LEN, "%s Remote", signal->type == FLIPPER_IR_SIGNAL_PARSED ? flipper_ir_irmp_to_proto(signal->parsed.protocol) : "Raw");
+    if (signal->type != FLIPPER_IR_SIGNAL_PARSED) return;
+    for (unsigned folder = 0; folder < sizeof(folders)/sizeof(folders[0]); folder++) {
+        DIR directory; FILINFO info; char base[IR_CUSTOM_PATH_MAX_LEN];
+        snprintf(base, sizeof(base), "0:/IR/%s", folders[folder]);
+        if (f_opendir(&directory, base) != FR_OK) continue;
+        while (f_readdir(&directory, &info) == FR_OK && info.fname[0]) {
+            size_t length = strlen(info.fname);
+            if ((info.fattrib & AM_DIR) || length < 4 || strcmp(info.fname+length-3,".ir") || !strncmp(info.fname,"Universal",9)) continue;
+            char file[IR_CUSTOM_PATH_MAX_LEN]; flipper_file_t ff;
+            if (snprintf(file,sizeof(file),"%s/%s",base,info.fname) >= (int)sizeof(file)) continue;
+            if (!flipper_ir_open(&ff,file)) continue;
+            while (flipper_ir_read_signal(&ff,&s_scan_sig)) {
+                if (s_scan_sig.type != FLIPPER_IR_SIGNAL_PARSED || !s_scan_sig.valid ||
+                    s_scan_sig.parsed.protocol != signal->parsed.protocol || s_scan_sig.parsed.address != signal->parsed.address || s_scan_sig.parsed.command != signal->parsed.command) continue;
+                char name[IR_CUSTOM_NAME_MAX_LEN];
+                snprintf(name,sizeof(name),"%.*s",(int)(length-3),info.fname);
+                if (!candidate[0]) snprintf(candidate,sizeof(candidate),"%s",name);
+                else if (strcmp(candidate,name)) ambiguous = true;
+                if (!matched_button[0]) snprintf(matched_button,sizeof(matched_button),"%s",s_scan_sig.name);
+                else if (strcmp(matched_button,s_scan_sig.name)) button_ambiguous = true;
+            }
+            ff_close(&ff);
+            m1_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        f_closedir(&directory);
+    }
+    if (candidate[0] && !ambiguous) snprintf(title,IR_CUSTOM_NAME_MAX_LEN,"%s",candidate);
+    if (matched_button[0] && !button_ambiguous) snprintf(button,IR_CUSTOM_NAME_MAX_LEN,"%s",matched_button);
 }
 
-/*============================================================================*/
-/**
- * @brief  Draw the per-remote action menu (Play Buttons / Learn Button).
- */
+static bool ir_custom_save_signal(char *path, flipper_ir_signal_t *signal)
+{
+    char suggested[IR_CUSTOM_NAME_MAX_LEN], button[IR_CUSTOM_NAME_MAX_LEN];
+    char entered[IR_CUSTOM_NAME_MAX_LEN], name[IR_CUSTOM_NAME_MAX_LEN];
+    char destination[IR_CUSTOM_PATH_MAX_LEN];
+    bool creating = !path[0];
+    ir_custom_next_button(path,button,sizeof(button));
+    ir_custom_suggest_identity(signal,suggested,button);
+    if (creating) {
+        if (!m1_vkb_get_filename("Remote name:",suggested,entered)) return false;
+        ir_custom_sanitize_name(entered,name,sizeof(name));
+    } else {
+        if (flipper_ir_count_signals(path) >= IR_CUSTOM_MAX_BUTTONS) {
+            ir_custom_draw_message("Remote full (64)","Edit/remove a button"); ir_custom_wait_key(); return false;
+        }
+    }
+    if (!m1_vkb_get_filename("Button name:",button,entered)) return false;
+    ir_custom_sanitize_name(entered,signal->name,sizeof(signal->name));
+    if (!creating) {
+        flipper_file_t read;
+        if (!flipper_ir_open(&read,path)) return false;
+        bool duplicate = false;
+        while (flipper_ir_read_signal(&read,&s_scan_sig))
+            if (!strcmp(s_scan_sig.name,signal->name)) { duplicate = true; break; }
+        ff_close(&read);
+        if (duplicate) {
+            ir_custom_draw_message("Button name exists","Edit or choose a name"); ir_custom_wait_key(); return false;
+        }
+        snprintf(destination,sizeof(destination),"%s",path);
+    } else if (!ir_custom_create_empty(name,destination,sizeof(destination))) return false;
+    flipper_file_t ff;
+    bool ok = flipper_ir_open_append(&ff,destination);
+    if (ok) { ok = flipper_ir_write_signal(&ff,signal); ff_close(&ff); }
+    if (!ok && creating) f_unlink(destination);
+    if (ok) snprintf(path,IR_CUSTOM_PATH_MAX_LEN,"%s",destination);
+    return ok;
+}
+
+static bool ir_custom_append_parsed(char *path, const IRMP_DATA *data)
+{
+    flipper_ir_signal_t signal = {0};
+    signal.type = FLIPPER_IR_SIGNAL_PARSED; signal.valid = true;
+    signal.parsed.protocol = data->protocol; signal.parsed.address = data->address;
+    signal.parsed.command = data->command; signal.parsed.flags = data->flags;
+    return ir_custom_save_signal(path,&signal);
+}
+
+static bool ir_custom_append_raw(char *path, flipper_ir_signal_t *signal)
+{
+    return ir_custom_save_signal(path,signal);
+}
+
+static bool ir_custom_rename_remote(const char *path, const char *name)
+{
+    char entered[IR_CUSTOM_NAME_MAX_LEN], sane[IR_CUSTOM_NAME_MAX_LEN];
+    char destination[IR_CUSTOM_PATH_MAX_LEN]; FILINFO info;
+    char original[IR_CUSTOM_NAME_MAX_LEN];
+    snprintf(original,sizeof(original),"%s",name);
+    if (!m1_vkb_get_filename("Rename remote:",original,entered)) return false;
+    ir_custom_sanitize_name(entered,sane,sizeof(sane));
+    const char *slash = strrchr(path,'/');
+    if (!slash || snprintf(destination,sizeof(destination),"%.*s/%s.ir",(int)(slash-path),path,sane) >= (int)sizeof(destination)) return false;
+    if (!strcmp(destination,path)) return true;
+    if (f_stat(destination,&info) != FR_NO_FILE) {
+        ir_custom_draw_message("Name already exists","Choose another name"); ir_custom_wait_key(); return false;
+    }
+    return f_rename(path,destination) == FR_OK;
+}
+
+static bool ir_custom_learn_more(const char *path)
+{
+    S_M1_Buttons_Status keys; S_M1_Main_Q_t q; char next[IR_CUSTOM_NAME_MAX_LEN];
+    ir_custom_next_button(path,next,sizeof(next));
+    ir_custom_draw_message("Button saved",next);
+    u8g2_SetFont(&m1_u8g2,M1_DISP_FUNC_MENU_FONT_N);
+    m1_draw_bottom_bar(&m1_u8g2,button_back_8x8,"Done","Add next",button_ok_8x8);
+    m1_u8g2_nextpage();
+    while (1) {
+        if (xQueueReceive(main_q_hdl,&q,portMAX_DELAY) != pdTRUE || q.q_evt_type != Q_EVENT_KEYPAD || xQueueReceive(button_events_q_hdl,&keys,0) != pdTRUE) continue;
+        if (keys.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK) return false;
+        if (keys.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK) return true;
+    }
+}
+
+static void ir_custom_draw_text(int x, int y, int width, const char *text)
+{
+    char bounded[IR_CUSTOM_DISP_NAME_LEN];
+    snprintf(bounded,sizeof(bounded),"%s",text ? text : "");
+    size_t n = strlen(bounded);
+    while (n && u8g2_GetStrWidth(&m1_u8g2,bounded) > width) bounded[--n] = 0;
+    u8g2_DrawStr(&m1_u8g2,x,y,bounded);
+}
+
 static void ir_custom_draw_remote_menu(const char *name, uint8_t selection)
 {
 	uint8_t i;
@@ -528,13 +552,14 @@ static void ir_custom_draw_remote_menu(const char *name, uint8_t selection)
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 
 	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
-	u8g2_DrawStr(&m1_u8g2, 2, 10, (name != NULL) ? name : "Remote");
+	ir_custom_draw_text(2,10,124,(name != NULL) ? name : "Remote");
 	u8g2_DrawHLine(&m1_u8g2, 0, IR_CUSTOM_LIST_HEADER_H, 128);
 
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-	for (i = 0; i < IR_CUSTOM_REMOTE_MENU_COUNT; i++)
+	uint8_t first = selection >= 4 ? selection - 3 : 0;
+	for (i = first; i < IR_CUSTOM_REMOTE_MENU_COUNT && i < first + 4; i++)
 	{
-		uint8_t y = (uint8_t)(IR_CUSTOM_LIST_START_Y + (i * IR_CUSTOM_LIST_ITEM_H));
+		uint8_t y = (uint8_t)(IR_CUSTOM_LIST_START_Y + ((i - first) * IR_CUSTOM_LIST_ITEM_H));
 
 		if (i == selection)
 		{
@@ -606,9 +631,9 @@ static void ir_custom_draw_message(const char *l1, const char *l2)
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
 	if (l1 != NULL)
-		u8g2_DrawStr(&m1_u8g2, 4, 28, l1);
+		ir_custom_draw_text(4,28,120,l1);
 	if (l2 != NULL)
-		u8g2_DrawStr(&m1_u8g2, 4, 40, l2);
+		ir_custom_draw_text(4,40,120,l2);
 	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "", NULL);
 	m1_u8g2_nextpage();
 }
@@ -622,7 +647,7 @@ static void ir_custom_draw_message(const char *l1, const char *l2)
  *         feedback like the stock Learn flow.
  * @param  path  full path to the remote's .ir file
  */
-static void ir_custom_learn_button(const char *path)
+static void ir_custom_learn_button(char *path)
 {
 	S_M1_Buttons_Status btn;
 	S_M1_Main_Q_t       q_item;
@@ -630,13 +655,17 @@ static void ir_custom_learn_button(const char *path)
 	IRMP_DATA           data;
 	ir_cap_state_t      cap = IR_CAP_NONE;
 
+learn_again:
+	cap = IR_CAP_NONE;
 	infrared_decode_sys_init();
 	irmp_init();
 	m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_M, LED_FASTBLINK_ONTIME_M);
 
 	memset(&data, 0, sizeof(data));
 	flipper_ir_raw_begin(&s_learn_raw, "Raw");
-	ir_custom_draw_learn(IR_CAP_NONE, NULL, 0);
+    char next_button[IR_CUSTOM_NAME_MAX_LEN];
+    ir_custom_next_button(path,next_button,sizeof(next_button));
+    ir_custom_draw_message("Press remote button:",next_button);
 
 	while (1)
 	{
@@ -707,8 +736,12 @@ static void ir_custom_learn_button(const char *path)
 				else
 					ok = ir_custom_append_raw(path, &s_learn_raw);
 
-				ir_custom_draw_message(ok ? "Button added" : "Add cancelled/failed", NULL);
-				ir_custom_wait_key();
+				if (ok) {
+                    if (ir_custom_learn_more(path)) { xQueueReset(main_q_hdl); xQueueReset(button_events_q_hdl); goto learn_again; }
+                } else {
+                    ir_custom_draw_message("Add cancelled/failed",NULL);
+                    ir_custom_wait_key();
+                }
 				xQueueReset(main_q_hdl);
 				return;
 			}
@@ -761,7 +794,7 @@ static void ir_custom_draw_button_list(const char *name, uint16_t selection, uin
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 
 	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
-	u8g2_DrawStr(&m1_u8g2, 2, 10, (name != NULL) ? name : "Edit");
+	ir_custom_draw_text(2,10,124,(name != NULL) ? name : "Edit");
 	u8g2_DrawHLine(&m1_u8g2, 0, IR_CUSTOM_LIST_HEADER_H, 128);
 
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
@@ -817,7 +850,7 @@ static void ir_custom_draw_action_menu(const char *name, uint8_t selection)
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 
 	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
-	u8g2_DrawStr(&m1_u8g2, 2, 10, (name != NULL) ? name : "Button");
+	ir_custom_draw_text(2,10,124,(name != NULL) ? name : "Button");
 	u8g2_DrawHLine(&m1_u8g2, 0, IR_CUSTOM_LIST_HEADER_H, 128);
 
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
@@ -883,9 +916,9 @@ static bool ir_custom_confirm(const char *l1, const char *l2)
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
 	if (l1 != NULL)
-		u8g2_DrawStr(&m1_u8g2, 4, 24, l1);
+		ir_custom_draw_text(4,24,120,l1);
 	if (l2 != NULL)
-		u8g2_DrawStr(&m1_u8g2, 4, 36, l2);
+		ir_custom_draw_text(4,36,120,l2);
 	m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Cancel", "Delete", button_ok_8x8);
 	m1_u8g2_nextpage();
 
@@ -1058,8 +1091,10 @@ static void ir_custom_edit_buttons(const char *path, const char *name)
  * @param  path  full path to the remote's .ir file
  * @param  name  display name (title)
  */
-static void ir_custom_open_remote(const char *path, const char *name)
+static void ir_custom_open_remote(const char *source_path, const char *name)
 {
+	char path[IR_CUSTOM_PATH_MAX_LEN];
+	snprintf(path,sizeof(path),"%s",source_path);
 	S_M1_Buttons_Status btn;
 	S_M1_Main_Q_t       q_item;
 	BaseType_t          ret;
@@ -1104,8 +1139,19 @@ static void ir_custom_open_remote(const char *path, const char *name)
 				ir_replay_file(path);       /* shared button-list replay */
 			else if (selection == 1)
 				ir_custom_learn_button(path);
-			else
-				ir_custom_edit_buttons(path, name);
+			else if (selection == 2)
+                ir_custom_edit_buttons(path, name);
+            else if (selection == 3) {
+                bool ok = ir_custom_rename_remote(path,name);
+                ir_custom_draw_message(ok ? "Remote renamed" : "Rename cancelled/failed",NULL);
+                ir_custom_wait_key();
+                return;
+            } else if (ir_custom_confirm("Delete entire remote?",name)) {
+                bool ok = f_unlink(path) == FR_OK;
+                ir_custom_draw_message(ok ? "Remote deleted" : "Delete failed",NULL);
+                ir_custom_wait_key();
+                return;
+            }
 
 			ir_custom_draw_remote_menu(name, selection);
 		}
@@ -1116,7 +1162,7 @@ static void ir_custom_open_remote(const char *path, const char *name)
 /**
  * @brief  Custom-remote entry point ("Custom Remotes" Infrared submenu item).
  *         Shows a manager list: "[+ New Remote]" plus every user-built
- *         0:/IR/*.ir remote. New -> name+create; opening a remote runs the
+ *         IR-root remote file. New -> name+create; opening a remote runs the
  *         shared scrolling button-list replay screen (ir_replay_file). Learn
  *         and edit actions land in later slices.
  */
@@ -1171,8 +1217,7 @@ void ir_custom_run(void)
 			else
 			{
 				char path[IR_CUSTOM_PATH_MAX_LEN];
-				snprintf(path, sizeof(path), "%s/%s.ir",
-				         IR_CUSTOM_DIR, s_remote_names[selection - 1]);
+				snprintf(path,sizeof(path),"%s",s_remote_paths[selection - 1]);
 				ir_custom_open_remote(path, s_remote_names[selection - 1]);
 			}
 

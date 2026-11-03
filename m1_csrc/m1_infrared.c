@@ -19,6 +19,7 @@
 #include "stm32h5xx_hal.h"
 #include "main.h"
 #include "m1_infrared.h"
+#include "m1_ir_custom.h"
 #include "m1_compile_cfg.h"
 #include "m1_display.h"
 #include "m1_lcd.h"
@@ -274,6 +275,10 @@ void infrared_universal_remotes(void)
 /*============================================================================*/
 void infrared_learn_new_remote(void)
 {
+#ifdef M1_APP_FILE_IMPORT_ENABLE
+    ir_custom_learn_new();
+    return;
+#else
 	S_M1_Buttons_Status this_button_status;
 	S_M1_Main_Q_t q_item;
 	BaseType_t ret;
@@ -395,6 +400,7 @@ void infrared_learn_new_remote(void)
 			}
 		}
 	}
+#endif
 } // void infrared_learn_new_remote(void)
 
 
@@ -409,12 +415,7 @@ void infrared_learn_new_remote(void)
 void infrared_saved_remotes(void)
 {
 #ifdef M1_APP_FILE_IMPORT_ENABLE
-	/* Use the Universal Remote infrastructure to browse saved .ir files.
-	 * This replaces the broken inline replay that only worked if a remote
-	 * was learned in the current session. */
-	ir_universal_init();
-	ir_universal_run();
-	ir_universal_deinit();
+	ir_custom_run();
 	return;
 #else
 	S_M1_Buttons_Status this_button_status;

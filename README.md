@@ -29,7 +29,10 @@ This fork documents our additions; credit for the broader firmware belongs upstr
 
 | Addition | Result |
 |---|---|
-| **Classic portrait remotes** | Saved Flipper-format remotes use a two-column button grid and original M1 power, mute, volume, channel, and playback artwork. |
+| **Consistent portrait remotes** | Power / Mute across the top; Volume + / Channel + below; Volume − / Channel − on the third row, independent of file order. Input takes Mute's place when available; absent controls leave vacant positions. All remaining buttons follow on later pages. |
+| **Whole-remote learning** | Learn the first button, accept/edit a suggested remote title, name the button, then choose **Add next** to keep building the same remote. |
+| **My Remotes manager** | Play, add buttons, edit button names, rename an entire remote, or confirm deletion. Includes older files from `IR/Learned` and custom remotes at the IR root. |
+| **Honest name suggestions** | Exact, unambiguous IRDB matches suggest a remote title and button name. Other captures use an editable protocol-based title, or `Raw Remote`; protocol detection alone does not identify a brand/model. |
 | **Accurate action legends** | Audited action screens show center **OK** and dedicated **Back** icons. Direction arrows remain where directional buttons perform the action. |
 | **Complete button navigation** | Fixes the list view exposing only the first 16 entries. All **64 supported commands per saved remote** are reachable. |
 | **Scoped rotation** | Only the graphical remote rotates into portrait. System screens stay in Normal/Southpaw orientation, and controls restore on return. |
@@ -44,6 +47,14 @@ This README intentionally does not repeat T-1000's Wi-Fi, Bluetooth, NFC, RFID, 
 
 Open **Infrared → Universal Remotes → Browse IRDB**, then select a remote.
 
+```text
+       Power       Mute / Input
+       Volume +    Channel +
+       Volume −    Channel −
+```
+
+Missing controls keep their positions and cannot be selected. Other buttons remain available on additional pages. Non-TV remotes without volume/channel controls use a compact grid with Power/Mute first when present.
+
 | View | Button | Action |
 |---|---|---|
 | Portrait grid | Direction pad | Move through buttons and pages |
@@ -56,6 +67,15 @@ Open **Infrared → Universal Remotes → Browse IRDB**, then select a remote.
 
 **Layout: Classic / Layout: List** selects the default view for the current session. Both views remain available. Unknown button names use text labels rather than an incorrect icon.
 
+## Learn a complete remote
+
+1. Open **Infrared → Learn** and press the requested button on the original remote.
+2. Press center **OK** after capture. Accept or edit the suggested remote title and button name.
+3. Choose **Add next** to capture another button into that same `.ir` file, or **Done** to finish.
+4. Open **Infrared → My Remotes** whenever you want to resume learning, rename the remote, edit its buttons, or play it.
+
+Recognized library functions can suggest the button name even if you pressed a different button from the prompt. Otherwise the prompt suggests the next missing standard control, and the name remains editable. Duplicate button names are rejected so one button does not silently replace another. Duplicate remote titles receive a numeric suffix without overwriting the existing file. The manager currently lists up to 24 files; each remote supports up to 64 buttons.
+
 ## Validation status
 
 | Check | Evidence |
@@ -65,11 +85,12 @@ Open **Infrared → Universal Remotes → Browse IRDB**, then select a remote.
 | Bundled remote databases | All 23 parsed successfully |
 | Navigation | Exhaustive checks for 0–64 buttons, odd rows, wraparound, and later pages |
 | Universal parser | Actual source tested against malformed entries, 64 commands, and duplicate raw names |
+| Remote builder | Actual helpers tested for title suggestions, grouped parsed/raw buttons, collision handling, cancellation, ambiguous identity, and whole-remote rename |
 | Layout bounds | Actual renderer source checked at 128×64 and 64×128 using conservative mocked font metrics |
 | Physical M1 | Owner confirmed T-1000 boots and portrait buttons work |
 | Physical IR response / every other function | **Not certified** by these tests |
 
-The physical confirmation applies to the original edition build installed on the owner's M1. A future upstream merge needs fresh validation. The T-1000 USB RPC diagnostic did not respond during the post-install check; it is not marked verified.
+The physical confirmation applies to revision 1 installed on the owner's M1. Revision 2's semantic layout and learning workflow require fresh physical confirmation. A future upstream merge also needs fresh validation. The T-1000 USB RPC diagnostic did not respond during the post-install check; it is not marked verified.
 
 ## Build and check
 

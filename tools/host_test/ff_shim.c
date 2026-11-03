@@ -13,6 +13,12 @@
 #include "ff.h"
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
+
+static const char *host_path(const char *path)
+{
+    return path && !strncmp(path,"0:/",3) ? path+3 : path;
+}
 
 /*============================================================================*/
 /**
@@ -34,7 +40,7 @@ FRESULT f_open(FIL *fp, const TCHAR *path, BYTE mode)
 	else                                /* FA_READ | FA_OPEN_EXISTING      */
 		m = "rb";
 
-	fp->fp = fopen(path, m);
+	fp->fp = fopen(host_path(path), m);
 	if (fp->fp == NULL)
 		return FR_NO_FILE;
 
@@ -58,7 +64,7 @@ FRESULT f_unlink(const TCHAR *path)
 	if (path == NULL)
 		return FR_INVALID_NAME;
 
-	return (remove(path) == 0) ? FR_OK : FR_NO_FILE;
+	return (remove(host_path(path)) == 0) ? FR_OK : FR_NO_FILE;
 }
 
 /*============================================================================*/
@@ -67,7 +73,7 @@ FRESULT f_rename(const TCHAR *path_old, const TCHAR *path_new)
 	if (path_old == NULL || path_new == NULL)
 		return FR_INVALID_NAME;
 
-	return (rename(path_old, path_new) == 0) ? FR_OK : FR_DISK_ERR;
+	return (rename(host_path(path_old), host_path(path_new)) == 0) ? FR_OK : FR_DISK_ERR;
 }
 
 /*============================================================================*/
@@ -79,7 +85,7 @@ FRESULT f_stat(const TCHAR *path, FILINFO *fno)
 	if (path == NULL)
 		return FR_INVALID_NAME;
 
-	f = fopen(path, "rb");
+	f = fopen(host_path(path), "rb");
 	if (f == NULL)
 		return FR_NO_FILE;
 

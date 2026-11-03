@@ -20,6 +20,7 @@
 
 /* Main entry point — "Custom Remotes" Infrared submenu item. */
 void ir_custom_run(void);
+void ir_custom_learn_new(void);
 
 #endif /* M1_APP_FILE_IMPORT_ENABLE */
 

@@ -34,6 +34,7 @@
 #include "flipper_ir.h"
 #include "ff.h"
 #include "m1_ir_remote_view.h"
+#include "m1_ir_custom.h"
 
 /*************************** D E F I N E S ************************************/
 
@@ -73,6 +74,8 @@ static uint16_t s_browse_page;
 static uint16_t s_browse_selection;
 static ir_universal_mode_t s_mode;
 static bool s_classic_remote = true;
+static uint16_t s_grid_order[IR_REMOTE_GRID_MAX];
+static uint16_t s_grid_count;
 static uint8_t s_remote_saved_orientation;
 static char s_current_path[IR_UNIVERSAL_PATH_MAX_LEN];
 
@@ -96,7 +99,7 @@ static flipper_ir_signal_t s_raw_tx_signal;
 /* Dashboard menu text (item 4 is dynamic: Remote/Normal Mode) */
 static const char *s_dashboard_items[DASHBOARD_ITEM_COUNT] = {
 	"Browse IRDB",
-	"Learned",
+	"My Remotes",
 	"Favorites",
 	"Recent",
 	"Remote Mode",
@@ -331,7 +334,6 @@ static void dashboard_screen(void)
 					switch (selection)
 					{
 						case 0: /* Browse IRDB */
-						case 1: /* Learned — browse user-saved remotes */
 						{
 							/* Temporarily switch to Normal for file browsing */
 							uint8_t saved_orient = m1_screen_orientation;
@@ -357,6 +359,9 @@ static void dashboard_screen(void)
 							}
 							break;
 						}
+						case 1: /* My Remotes */
+							ir_custom_run();
+							break;
 						case 2: /* Favorites */
 							show_favorites_screen();
 							break;
@@ -1077,20 +1082,22 @@ static void draw_remote_grid(const char *title, uint16_t selection)
     u8g2_SetFont(&m1_u8g2, u8g2_font_tiny5_tf);
     remote_draw_text(&m1_u8g2, 1, 7, 62, title, TEXT_ALIGN_CENTER);
     u8g2_DrawHLine(&m1_u8g2, 0, 10, 64);
-    for (uint16_t i = first; i < s_cmd_count && i < first + 6; i++) {
+    for (uint16_t i = first; i < s_grid_count && i < first + 6; i++) {
         uint8_t x = 3 + (i % 2) * 32, y = 14 + ((i - first) / 2) * 30;
-        const uint8_t *icon = remote_button_icon(s_commands[i].name);
+        uint16_t command = s_grid_order[i];
+        if (command == IR_REMOTE_EMPTY) continue;
+        const uint8_t *icon = remote_button_icon(s_commands[command].name);
         if (i == selection) {
             u8g2_DrawBox(&m1_u8g2, x, y, 26, 23);
             u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
         } else u8g2_DrawFrame(&m1_u8g2, x, y, 26, 23);
         if (icon) u8g2_DrawXBMP(&m1_u8g2, x + 4, y + 2, 18, 18, icon);
-        else remote_draw_text(&m1_u8g2, x + 2, y + 13, 22, s_commands[i].name, TEXT_ALIGN_CENTER);
+        else remote_draw_text(&m1_u8g2, x + 2, y + 13, 22, s_commands[command].name, TEXT_ALIGN_CENTER);
         u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
-        remote_draw_text(&m1_u8g2, x, y + 29, 28, s_commands[i].name, TEXT_ALIGN_CENTER);
+        remote_draw_text(&m1_u8g2, x, y + 29, 28, s_commands[command].name, TEXT_ALIGN_CENTER);
     }
     u8g2_DrawHLine(&m1_u8g2, 0, 105, 64);
-    snprintf(badge, sizeof(badge), "%u/%u%s", (unsigned)selection + 1, (unsigned)s_cmd_count, s_remote_tx_started ? " TX" : "");
+    snprintf(badge, sizeof(badge), "%u/%u%s", (unsigned)(selection / 6) + 1, (unsigned)((s_grid_count + 5) / 6), s_remote_tx_started ? " TX" : "");
     remote_draw_text(&m1_u8g2, 1, 112, 62, badge, TEXT_ALIGN_CENTER);
     remote_draw_text(&m1_u8g2, 1, 119, 62, "OK:Send", TEXT_ALIGN_CENTER);
     remote_draw_text(&m1_u8g2, 1, 127, 62, "Back:List", TEXT_ALIGN_CENTER);
@@ -1099,6 +1106,12 @@ static void draw_remote_grid(const char *title, uint16_t selection)
 
 static void show_remote_grid(const char *title, uint16_t *selection)
 {
+    const char *names[IR_UNIVERSAL_MAX_CMDS];
+    for (uint16_t i = 0; i < s_cmd_count; i++) names[i] = s_commands[i].name;
+    s_grid_count = ir_remote_grid_build(names, s_cmd_count, s_grid_order, IR_REMOTE_GRID_MAX);
+    if (!s_grid_count) return;
+    uint16_t cursor = 0;
+    for (uint16_t i = 0; i < s_grid_count; i++) if (s_grid_order[i] == *selection) { cursor = i; break; }
     uint8_t saved = m1_screen_orientation;
     S_M1_Buttons_Status keys;
     S_M1_Main_Q_t q;
@@ -1107,26 +1120,27 @@ static void show_remote_grid(const char *title, uint16_t *selection)
     u8g2_SetDisplayRotation(&m1_u8g2, U8G2_R1);
     xQueueReset(button_events_q_hdl);
     xQueueReset(main_q_hdl);
-    draw_remote_grid(title, *selection);
+    draw_remote_grid(title, cursor);
     for (;;) {
         if (xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(50)) != pdTRUE) {
             if (s_remote_tx_started && (!ir_ota_data_tx_active || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
                 remote_tx_stop();
-                draw_remote_grid(title, *selection);
+                draw_remote_grid(title, cursor);
             }
             continue;
         }
         if (q.q_evt_type == Q_EVENT_IRRED_TX) remote_tx_stop();
         else if (q.q_evt_type == Q_EVENT_KEYPAD && xQueueReceive(button_events_q_hdl, &keys, 0) == pdTRUE) {
             if (keys.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK) break;
-            if (keys.event[BUTTON_UP_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, 0, -1);
-            else if (keys.event[BUTTON_DOWN_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, 0, 1);
-            else if (keys.event[BUTTON_LEFT_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, -1, 0);
-            else if (keys.event[BUTTON_RIGHT_KP_ID] == BUTTON_EVENT_CLICK) *selection = ir_remote_move(*selection, s_cmd_count, 1, 0);
-            else if (keys.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK && !s_remote_tx_started) transmit_command(&s_commands[*selection]);
+            if (keys.event[BUTTON_UP_KP_ID] == BUTTON_EVENT_CLICK) cursor = ir_remote_grid_move(cursor, s_grid_order, s_grid_count, 0, -1);
+            else if (keys.event[BUTTON_DOWN_KP_ID] == BUTTON_EVENT_CLICK) cursor = ir_remote_grid_move(cursor, s_grid_order, s_grid_count, 0, 1);
+            else if (keys.event[BUTTON_LEFT_KP_ID] == BUTTON_EVENT_CLICK) cursor = ir_remote_grid_move(cursor, s_grid_order, s_grid_count, -1, 0);
+            else if (keys.event[BUTTON_RIGHT_KP_ID] == BUTTON_EVENT_CLICK) cursor = ir_remote_grid_move(cursor, s_grid_order, s_grid_count, 1, 0);
+            else if (keys.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK && !s_remote_tx_started) transmit_command(&s_commands[s_grid_order[cursor]]);
         }
-        draw_remote_grid(title, *selection);
+        draw_remote_grid(title, cursor);
     }
+    *selection = s_grid_order[cursor];
     remote_tx_stop();
     m1_screen_orientation = saved;
     m1_southpaw_mode = (saved == M1_ORIENT_SOUTHPAW);

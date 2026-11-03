@@ -29,6 +29,8 @@ typedef struct {
 /* File status structure (only the field the parsers may read). */
 typedef struct {
 	FSIZE_t fsize;
+    BYTE fattrib;
+    char fname[256];
 } FILINFO;
 
 /* Result codes — only FR_OK is compared by name; the rest give error variety. */

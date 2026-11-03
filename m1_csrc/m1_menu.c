@@ -284,7 +284,7 @@ S_M1_Menu_t menu_Infrared_Learn_New_Remote =
 
 S_M1_Menu_t menu_Infrared_Saved_Remotes =
 {
-    "Replay", infrared_saved_remotes, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "My Remotes", infrared_saved_remotes, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 #ifdef M1_APP_FILE_IMPORT_ENABLE
@@ -297,8 +297,8 @@ S_M1_Menu_t menu_Infrared_Create_Remote =
 S_M1_Menu_t menu_Infrared =
 {
 #ifdef M1_APP_FILE_IMPORT_ENABLE
-    "Infrared", menu_infrared_init, NULL, NULL, 4, 0, menu_m1_icon_infrared, NULL,
-    {&menu_Infrared_Universal_Remotes, &menu_Infrared_Learn_New_Remote, &menu_Infrared_Saved_Remotes, &menu_Infrared_Create_Remote}
+    "Infrared", menu_infrared_init, NULL, NULL, 3, 0, menu_m1_icon_infrared, NULL,
+    {&menu_Infrared_Universal_Remotes, &menu_Infrared_Learn_New_Remote, &menu_Infrared_Saved_Remotes}
 #else
     "Infrared", menu_infrared_init, NULL, NULL, 3, 0, menu_m1_icon_infrared, NULL,
     {&menu_Infrared_Universal_Remotes, &menu_Infrared_Learn_New_Remote, &menu_Infrared_Saved_Remotes}

@@ -16,6 +16,7 @@ typedef enum {TEXT_ALIGN_LEFT,TEXT_ALIGN_CENTER,TEXT_ALIGN_RIGHT} S_M1_text_alig
 static u8g2_t m1_u8g2;
 static ir_universal_cmd_t s_commands[64];
 static uint16_t s_cmd_count;
+static uint16_t s_grid_count, s_grid_order[IR_REMOTE_GRID_MAX];
 static bool s_remote_tx_started;
 static const uint8_t button_ok_8x8[8],arrowleft_8x8[8];
 static const uint8_t button_power_18x18[54],button_mute_18x18[54],button_plus_18x18[54],button_minus_18x18[54],button_up_18x18[54],button_down_18x18[54],button_play_18x18[54],button_pause_18x18[54],button_next_18x18[54],button_previous_18x18[54];
