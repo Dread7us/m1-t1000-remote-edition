@@ -91,7 +91,7 @@ Recognized library functions can suggest the button name even if you pressed a d
 | Physical M1 | Owner confirmed T-1000 boots and portrait buttons work |
 | Physical IR response / every other function | **Not certified** by these tests |
 
-The owner confirmed revision 2 boots and its semantic remote layout is correct. Grouped learning and revision 3's avatar splash still require physical confirmation. A future upstream merge also needs fresh validation. The T-1000 USB RPC diagnostic did not respond during the post-install check; it is not marked verified.
+The owner confirmed revision 2's semantic remote layout and revision 3's boot, avatar splash, and clean title on the M1. Grouped learning still requires physical confirmation. A future upstream merge also needs fresh validation. The T-1000 USB RPC diagnostic did not respond during the post-install check; it is not marked verified.
 
 ## Build and check
 

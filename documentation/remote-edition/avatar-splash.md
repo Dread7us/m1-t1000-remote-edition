@@ -6,6 +6,8 @@ The startup/home artwork is adapted from [Dread7us's GitHub avatar](https://avat
 
 This preview comes from the **actual `startup_info_screen_display()` implementation**, rendered with the repository's real u8g2 bitmap and fonts on a host. Hardware I/O is stubbed. It is enlarged with nearest-neighbor pixels; it is not a photograph of the physical M1.
 
+The owner confirmed the revision 3 splash looks right on the physical M1 on 2026-11-03, including removal of the line crossing the title.
+
 ## Layout
 
 - 128×64 display, existing outer frame retained.
