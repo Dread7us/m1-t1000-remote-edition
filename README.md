@@ -29,7 +29,7 @@ This fork documents our additions; credit for the broader firmware belongs upstr
 
 <div align="center">
 
-### Dread7us's avatar, built into the M1
+### Updated splash screen
 
 <img src="documentation/remote-edition/avatar-splash-preview.png" alt="Revision 3 startup screen showing Dread7us's armored avatar above M1 T-1000, with a clean title and version below" width="512">
 
