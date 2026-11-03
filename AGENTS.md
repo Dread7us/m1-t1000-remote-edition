@@ -1,7 +1,7 @@
 # AGENTS.md — Standing Instructions for AI Assistants
 
 ## Project: M1 T-1000 Firmware (M1-os)
-## Owner: dagnazty
+## Owner: dagnazty (upstream); Dread7us (Remote Edition fork)
 
 ---
 
@@ -96,5 +96,8 @@
 
 ## Remote Configuration
 
-- `origin` = dagnazty/M1-os (our repo)
-- `upstream` = bedge117/M1 (reference upstream)
+- `origin` = Dread7us/m1-t1000-remote-edition (this fork)
+- `upstream` = dagnazty/M1_T-1000 (T-1000 source)
+- Keep the edition README focused on edition changes; preserve upstream credit.
+- Before merging an upstream update, run the Remote Edition native tests and firmware build.
+- Never treat a successful build as certification of every hardware function.

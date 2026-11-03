@@ -1,0 +1,9 @@
+{
+  "name": "T-1000 Remote Edition",
+  "maintainer": "Dread7us",
+  "upstream_repository": "https://github.com/dagnazty/M1_T-1000",
+  "upstream_commit": "268d8ca1f9ac9bb568ed54f869af83f3bf151c1e",
+  "edition_revision": "1",
+  "hardware_confirmed": ["M1 boot", "portrait remote controls"],
+  "hardware_not_certified": ["IR receiver response", "all other hardware functions"]
+}

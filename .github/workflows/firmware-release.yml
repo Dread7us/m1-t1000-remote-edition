@@ -54,6 +54,9 @@ jobs:
             python3 \
             zip
 
+      - name: Check Remote Edition controls
+        run: python3 tools/remote_edition/validate.py
+
       - name: Build firmware
         run: ./build.sh
 

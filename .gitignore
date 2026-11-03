@@ -65,3 +65,9 @@ m1-firmware/
 m1-stock/
 esp32-at-hid/
 Archive-Do-Not-Reference/
+
+# Remote Edition local builds and Python caches
+build-*/
+__pycache__/
+*.pyc
+.remote-edition-tests/
