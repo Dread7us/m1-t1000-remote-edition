@@ -19,7 +19,27 @@ This fork documents our additions; credit for the broader firmware belongs upstr
 
 <sub>Layout illustration, not a device photograph or captured framebuffer.</sub>
 
-[Our changes](#what-this-edition-changes) · [Controls](#controls) · [Validation](#validation-status) · [Update upstream](#keeping-up-with-t-1000) · [Original README](README.upstream.md)
+[Splash screen](#splash-screen) · [Our changes](#what-this-edition-changes) · [Controls](#controls) · [Validation](#validation-status) · [Update upstream](#keeping-up-with-t-1000) · [Original README](README.upstream.md)
+
+</div>
+
+---
+
+## Splash screen
+
+<div align="center">
+
+### Dread7us's avatar, built into the M1
+
+<img src="documentation/remote-edition/avatar-splash-preview.png" alt="Revision 3 startup screen showing Dread7us's armored avatar above M1 T-1000, with a clean title and version below" width="512">
+
+**Revision 3 · Confirmed on the physical M1**
+
+<sub>Enlarged preview rendered from the actual firmware code and fonts—not a device photograph.</sub>
+
+A crisp **48×38 monochrome avatar emblem**, a centered **M1 T-1000** title, and a clear version line. The divider that crossed the title has been removed.
+
+[Artwork, native-size asset, and layout details](documentation/remote-edition/avatar-splash.md)
 
 </div>
 
