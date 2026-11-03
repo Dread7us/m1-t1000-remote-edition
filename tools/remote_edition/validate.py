@@ -145,7 +145,7 @@ exe=compile('geometry',[out/'geometry.c']);print(run([exe]))
 # keyboard and directory discovery are mocked; saved file bytes are real.
 custom=(src/'m1_ir_custom.c').read_text()
 builder=(repo/'tools/remote_edition/builder_prelude.h').read_text()
-for signature in ['static void ir_custom_sanitize_name(', 'static bool ir_custom_unique_path(', 'static bool ir_custom_create_empty(', 'static void ir_custom_next_button(', 'static void ir_custom_suggest_identity(', 'static bool ir_custom_save_signal(', 'static bool ir_custom_rename_remote(']:
+for signature in ['static void ir_custom_sanitize_name(', 'static bool ir_custom_unique_path(', 'static bool ir_custom_create_empty(', 'static void ir_custom_next_button(', 'static void ir_custom_skip_suggestion(', 'static void ir_custom_suggest_identity(', 'static bool ir_custom_save_signal(', 'static bool ir_custom_rename_remote(']:
  matches=list(re.finditer(re.escape(signature),custom))
  # Definitions have an opening brace before the next semicolon; declarations do not.
  start=next(m.start() for m in matches if custom.find('{',m.start()) < custom.find(';',m.start()))

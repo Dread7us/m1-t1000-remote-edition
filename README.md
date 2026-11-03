@@ -52,6 +52,7 @@ A crisp **48×38 monochrome avatar emblem**, a centered **M1 T-1000** title, and
 | **Avatar splash screen** | A 48×38 monochrome emblem adapted from Dread7us's current GitHub avatar. Removes the divider crossing the M1 T-1000 title; retains the title and version/status display. [Preview and artwork details](documentation/remote-edition/avatar-splash.md). |
 | **Consistent portrait remotes** | Power / Mute across the top; Volume + / Channel + below; Volume − / Channel − on the third row, independent of file order. Input takes Mute's place when available; absent controls leave vacant positions. All remaining buttons follow on later pages. |
 | **Whole-remote learning** | Learn the first button, accept/edit a suggested remote title, name the button, then choose **Add next** to keep building the same remote. |
+| **Skip unavailable controls** | Press **Right → Skip** to bypass controls your remote lacks. The choice is remembered per remote as an ignorable `.ir` comment, survives edits/renames, and creates no empty buttons. |
 | **My Remotes manager** | Play, add buttons, edit button names, rename an entire remote, or confirm deletion. Includes older files from `IR/Learned` and custom remotes at the IR root. |
 | **Honest name suggestions** | Exact, unambiguous IRDB matches suggest a remote title and button name. Other captures use an editable protocol-based title, or `Raw Remote`; protocol detection alone does not identify a brand/model. |
 | **Accurate action legends** | Audited action screens show center **OK** and dedicated **Back** icons. Direction arrows remain where directional buttons perform the action. |
@@ -96,6 +97,8 @@ Missing controls keep their positions and cannot be selected. Other buttons rema
 4. Open **Infrared → My Remotes** whenever you want to resume learning, rename the remote, edit its buttons, or play it.
 
 Recognized library functions can suggest the button name even if you pressed a different button from the prompt. Otherwise the prompt suggests the next missing standard control, and the name remains editable. Duplicate button names are rejected so one button does not silently replace another. Duplicate remote titles receive a numeric suffix without overwriting the existing file. The manager currently lists up to 24 files; each remote supports up to 64 buttons.
+
+**No Mute button? Press Right to Skip.** The next prompt advances to the next available standard control, and Mute stays skipped when you reopen **Add Buttons**. Center **OK** saves a captured signal; **Back** finishes learning. Right also discards an unwanted capture and skips that prompt. You can still capture and name a skipped control later if needed.
 
 ## Validation status
 

@@ -116,4 +116,9 @@ const char *flipper_ir_irmp_to_proto(uint8_t irmp_id);
 /* Count signals in a .ir file without loading them all */
 uint16_t flipper_ir_count_signals(const char *path);
 
+/* Remote Edition learning preferences, stored as ignorable .ir comments.
+ * Bits: Power, Mute, Volume+, Channel+, Volume-, Channel-. */
+uint8_t flipper_ir_get_skipped_controls(const char *path);
+bool flipper_ir_set_skipped_controls(const char *path, uint8_t mask);
+
 #endif /* FLIPPER_IR_H_ */

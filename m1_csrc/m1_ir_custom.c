@@ -87,6 +87,8 @@ static flipper_ir_signal_t s_learn_raw;
 
 /* Scratch signal for reading button names off the task stack (~2 KB). */
 static flipper_ir_signal_t s_scan_sig;
+static uint8_t s_learn_skipped;
+static uint16_t s_learn_other_skips;
 
 /* Per-remote action menu. */
 static const char *const s_remote_menu_items[] = { "Play Remote", "Add Buttons", "Edit Buttons", "Rename Remote", "Delete Remote" };
@@ -406,8 +408,20 @@ static void ir_custom_next_button(const char *path, char *out, size_t length)
             for (unsigned i = 0; i < 6; i++) if (ir_remote_icon(s_scan_sig.name) == roles[i]) seen[i] = true;
         ff_close(&ff);
     }
-    for (unsigned i = 0; i < 6; i++) if (!seen[i]) { snprintf(out, length, "%s", names[i]); return; }
-    snprintf(out, length, "Button_%u", (unsigned)flipper_ir_count_signals(path) + 1);
+    uint8_t skipped = s_learn_skipped | flipper_ir_get_skipped_controls(path);
+    for (unsigned i = 0; i < 6; i++) if (!seen[i] && !(skipped & (1U << i))) { snprintf(out, length, "%s", names[i]); return; }
+    snprintf(out, length, "Button_%u", (unsigned)flipper_ir_count_signals(path) + 1 + s_learn_other_skips);
+}
+
+static void ir_custom_skip_suggestion(const char *name)
+{
+    const ir_remote_icon_t roles[] = {IR_ICON_POWER, IR_ICON_MUTE, IR_ICON_PLUS, IR_ICON_UP, IR_ICON_MINUS, IR_ICON_DOWN};
+    ir_remote_icon_t role = ir_remote_icon(name);
+    for (unsigned i = 0; i < 6; i++) if (role == roles[i]) {
+        s_learn_skipped |= (uint8_t)(1U << i);
+        return;
+    }
+    s_learn_other_skips++;
 }
 
 /* An exact, unambiguous library match can suggest a device name. Protocol
@@ -485,7 +499,10 @@ static bool ir_custom_save_signal(char *path, flipper_ir_signal_t *signal)
     bool ok = flipper_ir_open_append(&ff,destination);
     if (ok) { ok = flipper_ir_write_signal(&ff,signal); ff_close(&ff); }
     if (!ok && creating) f_unlink(destination);
-    if (ok) snprintf(path,IR_CUSTOM_PATH_MAX_LEN,"%s",destination);
+    if (ok) {
+        snprintf(path,IR_CUSTOM_PATH_MAX_LEN,"%s",destination);
+        if (s_learn_skipped) flipper_ir_set_skipped_controls(path,s_learn_skipped);
+    }
     return ok;
 }
 
@@ -599,18 +616,19 @@ static void ir_custom_draw_learn(ir_cap_state_t state, const IRMP_DATA *data, ui
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
 	if (state == IR_CAP_PARSED && data != NULL)
 	{
-		u8g2_DrawStr(&m1_u8g2, 4, 24, "Captured:");
-		u8g2_DrawStr(&m1_u8g2, 4, 34, flipper_ir_irmp_to_proto(data->protocol));
+		u8g2_DrawStr(&m1_u8g2, 4, 24, flipper_ir_irmp_to_proto(data->protocol));
 		snprintf(line, sizeof(line), "A:%04X C:%04X", data->address, data->command);
-		u8g2_DrawStr(&m1_u8g2, 4, 44, line);
-		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Save", button_ok_8x8);
+		u8g2_DrawStr(&m1_u8g2, 4, 36, line);
+		u8g2_DrawStr(&m1_u8g2, 4, 46, "OK:Save  Right:Skip");
+		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Done", "Skip", arrowright_8x8);
 	}
 	else if (state == IR_CAP_RAW)
 	{
 		u8g2_DrawStr(&m1_u8g2, 4, 24, "Captured (raw):");
 		snprintf(line, sizeof(line), "%u samples", (unsigned)raw_count);
-		u8g2_DrawStr(&m1_u8g2, 4, 38, line);
-		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Save", button_ok_8x8);
+		u8g2_DrawStr(&m1_u8g2, 4, 36, line);
+		u8g2_DrawStr(&m1_u8g2, 4, 46, "OK:Save  Right:Skip");
+		m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Done", "Skip", arrowright_8x8);
 	}
 	else
 	{
@@ -654,6 +672,8 @@ static void ir_custom_learn_button(char *path)
 	BaseType_t          ret;
 	IRMP_DATA           data;
 	ir_cap_state_t      cap = IR_CAP_NONE;
+    s_learn_skipped = flipper_ir_get_skipped_controls(path);
+    s_learn_other_skips = 0;
 
 learn_again:
 	cap = IR_CAP_NONE;
@@ -666,6 +686,9 @@ learn_again:
     char next_button[IR_CUSTOM_NAME_MAX_LEN];
     ir_custom_next_button(path,next_button,sizeof(next_button));
     ir_custom_draw_message("Press remote button:",next_button);
+    u8g2_SetFont(&m1_u8g2,M1_DISP_FUNC_MENU_FONT_N);
+    m1_draw_bottom_bar(&m1_u8g2,button_back_8x8,"Done","Skip",arrowright_8x8);
+    m1_u8g2_nextpage();
 
 	while (1)
 	{
@@ -722,8 +745,20 @@ learn_again:
 				xQueueReset(main_q_hdl);
 				return;
 			}
-			else if ((btn.event[BUTTON_OK_KP_ID]    == BUTTON_EVENT_CLICK ||
-			          btn.event[BUTTON_RIGHT_KP_ID]  == BUTTON_EVENT_CLICK) && cap != IR_CAP_NONE)
+            else if (btn.event[BUTTON_RIGHT_KP_ID] == BUTTON_EVENT_CLICK)
+            {
+                m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
+                infrared_decode_sys_deinit();
+                ir_custom_skip_suggestion(next_button);
+                if (path[0] && !flipper_ir_set_skipped_controls(path,s_learn_skipped)) {
+                    ir_custom_draw_message("Skipped this session","SD preference not saved");
+                    ir_custom_wait_key();
+                }
+                xQueueReset(main_q_hdl);
+                xQueueReset(button_events_q_hdl);
+                goto learn_again;
+            }
+			else if (btn.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK && cap != IR_CAP_NONE)
 			{
 				bool ok;
 

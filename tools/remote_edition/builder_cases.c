@@ -39,6 +39,25 @@ int main(void) {
  char rawpath[256]="";reset_answers("","");assert(ir_custom_save_signal(rawpath,&raw));
  assert(!strcmp(rawpath,"0:/IR/Raw Remote.ir"));
  reset_answers("",NULL);assert(ir_custom_save_signal(rawpath,&raw));assert(flipper_ir_count_signals(rawpath)==2);
+ s_learn_skipped=0;s_learn_other_skips=0;
+ char suggestion[32];ir_custom_next_button(collision,suggestion,sizeof(suggestion));assert(!strcmp(suggestion,"Mute"));
+ ir_custom_skip_suggestion(suggestion);assert(s_learn_skipped==2);
+ assert(flipper_ir_set_skipped_controls(collision,s_learn_skipped));
+ assert(flipper_ir_count_signals(collision)==1);
+ s_learn_skipped=0; /* Re-entering learning must honor the file preference. */
+ ir_custom_next_button(collision,suggestion,sizeof(suggestion));assert(!strcmp(suggestion,"Vol_up"));
+ assert(flipper_ir_rename_signal(collision,0,"Power"));assert(flipper_ir_get_skipped_controls(collision)==2);
+ reset_answers("Skipped Mute",NULL);assert(ir_custom_rename_remote(collision,"Samsung"));
+ assert(flipper_ir_get_skipped_controls("0:/IR/Skipped Mute.ir")==2);
+ assert(flipper_ir_count_signals("0:/IR/Skipped Mute.ir")==1);
+ assert(!flipper_ir_set_skipped_controls("",2));assert(!flipper_ir_set_skipped_controls("missing.ir",2));
+ s_learn_skipped=0x3f;
+ ir_custom_next_button("",suggestion,sizeof(suggestion));assert(!strcmp(suggestion,"Button_1"));
+ ir_custom_skip_suggestion(suggestion);ir_custom_next_button("",suggestion,sizeof(suggestion));assert(!strcmp(suggestion,"Button_2"));
+ s_learn_other_skips=0;s_learn_skipped=2;
+ char new_skipped[256]="";sig.parsed.command=2;reset_answers("New skipped remote","");assert(ir_custom_save_signal(new_skipped,&sig));
+ assert(flipper_ir_get_skipped_controls(new_skipped)==2 && flipper_ir_count_signals(new_skipped)==1);
+ puts("PASS: Skip Mute advances to Volume+, survives reopening and edits/remote rename, creates no fake signals, handles all controls skipped and carries first-save preferences");
  puts("PASS: actual builder groups learned buttons in one file, suggests matched titles/functions, retains existing signals, rejects duplicate names, renames without overwriting, cancels without files, and falls back on ambiguous identity");
  return 0;
 }

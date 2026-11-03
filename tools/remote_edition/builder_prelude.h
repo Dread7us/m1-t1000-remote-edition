@@ -16,6 +16,8 @@
 typedef struct {unsigned index;} DIR;
 static unsigned ambiguous_library;
 static flipper_ir_signal_t s_scan_sig;
+static uint8_t s_learn_skipped;
+static uint16_t s_learn_other_skips;
 static const char *answers[8]; static unsigned answer_index;
 static uint8_t m1_vkb_get_filename(const char *prompt,char *initial,char *out) {
  (void)prompt;const char *answer=answers[answer_index++];

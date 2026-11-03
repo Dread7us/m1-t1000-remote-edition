@@ -447,6 +447,30 @@ bool flipper_ir_write_signal(flipper_file_t *ctx, const flipper_ir_signal_t *sig
  * @param  user  opaque pointer passed through to the callback
  * @return true if the file was rewritten and replaced successfully
  */
+uint8_t flipper_ir_get_skipped_controls(const char *path)
+{
+    FIL file; char line[FF_LINE_BUF_LEN]; uint8_t result = 0;
+    if (!path || !path[0] || f_open(&file,path,FA_READ) != FR_OK) return 0;
+    while (f_gets(line,sizeof(line),&file)) {
+        unsigned mask;
+        if (sscanf(line,"# RemoteEdition-Skip: %x",&mask) == 1 && mask <= 0x3f)
+            result = (uint8_t)mask;
+    }
+    f_close(&file);
+    return result;
+}
+
+bool flipper_ir_set_skipped_controls(const char *path, uint8_t mask)
+{
+    FILINFO info; flipper_file_t file; char comment[32];
+    if (!path || !path[0] || mask > 0x3f || f_stat(path,&info) != FR_OK) return false;
+    if (!ff_open_append(&file,path)) return false;
+    snprintf(comment,sizeof(comment),"RemoteEdition-Skip: %02X",mask);
+    bool ok = f_printf(&file.fh,"\n") >= 0 && ff_write_comment(&file,comment);
+    ff_close(&file);
+    return ok;
+}
+
 bool flipper_ir_rewrite(const char *path, flipper_ir_rewrite_cb_t cb, void *user)
 {
 	flipper_file_t      src;
@@ -459,6 +483,7 @@ bool flipper_ir_rewrite(const char *path, flipper_ir_rewrite_cb_t cb, void *user
 
 	if (path == NULL || cb == NULL)
 		return false;
+	uint8_t skipped_controls = flipper_ir_get_skipped_controls(path);
 
 	/* Build "<path>.tmp"; bail out if it would be truncated. */
 	n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
@@ -499,6 +524,11 @@ bool flipper_ir_rewrite(const char *path, flipper_ir_rewrite_cb_t cb, void *user
 		}
 	}
 
+	if (ok && skipped_controls) {
+        char comment[32];
+        snprintf(comment,sizeof(comment),"RemoteEdition-Skip: %02X",skipped_controls);
+        ok = ff_write_comment(&dst,comment);
+    }
 	ff_close(&src);
 	ff_close(&dst);
 
