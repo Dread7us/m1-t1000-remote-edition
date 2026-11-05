@@ -59,6 +59,7 @@ uint16_t ir_ota_data_tx_len;
 volatile uint16_t ir_ota_data_tx_counter;
 uint16_t *pir_ota_data_tx_buffer;
 static TimerHandle_t ir_tx_timer_hdl = NULL;
+static volatile bool ir_tx_delay_done;
 
 static IRMP_DATA 			irmp_loopback_data;
 static uint8_t				new_remote_learned;
@@ -160,7 +161,8 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 								irsnd_on(); // Start the PWM of the carrier at the output
 							__HAL_TIM_ENABLE(&Timerhdl_IrTx); // Start the timer of the baseband to control the carrier
 							// Update reload value for the next bit (next period)
-							Timerhdl_IrTx.Instance->ARR = pir_ota_data_tx_buffer[++ir_ota_data_tx_counter]; // Save the ARR for the next bit
+							ir_ota_data_tx_counter = 1;
+                            if (ir_ota_data_tx_len > 1) Timerhdl_IrTx.Instance->ARR = pir_ota_data_tx_buffer[1]; // Prefetch only an existing sample
 							//__HAL_TIM_SET_COUNTER(&Timerhdl_IrTx, 0);
 							ir_tx_state = IR_TX_ACTIVE; // update state machine
 						} // if ( m1_check_ir_ota_frame_status() )
@@ -179,10 +181,12 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 						if ( ir_delay_time ) // Valid delay time?
 						{
 							// Create the one shot timer for the delay
-							ir_tx_timer_hdl = xTimerCreate( "Ir_Tx_Delay_Once", pdMS_TO_TICKS(ir_delay_time), pdFALSE, 0, infrared_encode_timer_cb);
+							ir_tx_delay_done = false;
+                            ir_tx_timer_hdl = xTimerCreate( "Ir_Tx_Delay_Once", pdMS_TO_TICKS(ir_delay_time), pdFALSE, 0, infrared_encode_timer_cb);
 							if( ir_tx_timer_hdl != NULL )
 							{
 								ret = xTimerStart( ir_tx_timer_hdl, 0 );
+                                if (ret == pdPASS) ir_tx_state = IR_TX_DELAY;
 							} // if( ( ir_tx_timer_hdl != NULL )
 						} // if ( ir_delay_time )
 						if (ret!=pdPASS) // Not a valid delay time or timer fails, just finish
@@ -201,11 +205,18 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 				if ( !ir_ota_data_tx_active ) // Tx completed?
 				{
 					__HAL_TIM_DISABLE(&Timerhdl_IrTx); // Stop the timer of the baseband
-					m1_ir_ota_frame_post_process(irmp_data.protocol);
+					m1_ir_ota_frame_post_process(irsnd_tx_protocol());
 					ir_tx_state = IR_TX_INIT; // reset to repeat the process
 					continue; // Repeat the process
 				} // if ( !ir_ota_data_tx_active )
 				break;
+
+            case IR_TX_DELAY:
+                if (ir_tx_delay_done) {
+                    if (ir_tx_timer_hdl != NULL) {xTimerDelete(ir_tx_timer_hdl,0);ir_tx_timer_hdl=NULL;}
+                    ir_tx_delay_done=false;ir_tx_state=IR_TX_INIT;continue;
+                }
+                break;
 
 			case IR_TX_COMPLETED:
 				// Wait for user to exit
@@ -630,7 +641,7 @@ static bool ir_save_learned_signal(const IRMP_DATA *data)
 /*============================================================================*/
 void infrared_decode_sys_init(void)
 {
-	GPIO_InitTypeDef gpio_init_struct;
+	GPIO_InitTypeDef gpio_init_struct = {0};
 	TIM_IC_InitTypeDef tim_ic_init = {0};
 	TIM_MasterConfigTypeDef tim_master_conf = {0};
 	uint32_t tim_prescaler_val;
@@ -780,9 +791,27 @@ void infrared_decode_sys_deinit(void)
 /*============================================================================*/
 void infrared_encode_sys_init(void)
 {
+    /* A fresh peripheral boundary for every parsed/raw send, including wake. */
+    HAL_NVIC_DisableIRQ(IR_ENCODE_TIMER_IRQn);
+    if (ir_tx_timer_hdl != NULL) {xTimerDelete(ir_tx_timer_hdl,0);ir_tx_timer_hdl=NULL;}
+    ir_tx_delay_done = false;
+    ir_ota_data_tx_active = FALSE;
+    IR_ENCODE_CARRIER_TIMER_CLK();
+    IR_ENCODE_BASEBAND_TIMER_CLK();
+    __HAL_RCC_TIM1_FORCE_RESET();
+    __HAL_RCC_TIM16_FORCE_RESET();
+    __HAL_RCC_TIM1_RELEASE_RESET();
+    __HAL_RCC_TIM16_RELEASE_RESET();
+    memset(&Timerhdl_IrTx, 0, sizeof(Timerhdl_IrTx));
+    memset(&Timerhdl_IrCarrier, 0, sizeof(Timerhdl_IrCarrier));
+    ir_ota_data_tx_counter = 0;
+    ir_ota_data_tx_len = 0;
+    pir_ota_data_tx_buffer = NULL;
+    HAL_NVIC_ClearPendingIRQ(IR_ENCODE_TIMER_IRQn);
+
 	//TIM_OC_InitTypeDef ch_config;
-	TIM_MasterConfigTypeDef sMasterConfig;
-	GPIO_InitTypeDef gpio_init_struct;
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+	GPIO_InitTypeDef gpio_init_struct = {0};
 	uint32_t tim_prescaler_val;
 
 	IR_ENCODE_CARRIER_TIMER_CLK();
@@ -899,8 +928,11 @@ void infrared_encode_sys_init(void)
 /*============================================================================*/
 void infrared_encode_sys_deinit(void)
 {
+    HAL_NVIC_DisableIRQ(IR_ENCODE_TIMER_IRQn);
+    ir_ota_data_tx_active = FALSE;
+    HAL_NVIC_ClearPendingIRQ(IR_ENCODE_TIMER_IRQn);
 	BaseType_t ret;
-	GPIO_InitTypeDef gpio_init_struct;
+	GPIO_InitTypeDef gpio_init_struct = {0};
 
 	gpio_init_struct.Pin = IR_DRV_Pin;
 	gpio_init_struct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -914,6 +946,9 @@ void infrared_encode_sys_deinit(void)
 
 	IR_ENCODE_CARRIER_TIMER_CLK_DIS();
 	IR_ENCODE_BASEBAND_TIMER_CLK_DIS();
+    ir_ota_data_tx_counter = 0;
+    ir_ota_data_tx_len = 0;
+    pir_ota_data_tx_buffer = NULL;
 
 	HAL_NVIC_DisableIRQ(IR_ENCODE_TIMER_IRQn);
 
@@ -941,6 +976,8 @@ void infrared_encode_sys_deinit(void)
 /*============================================================================*/
 static void infrared_encode_timer_cb(TimerHandle_t xTimer)
 {
+    if (xTimer != ir_tx_timer_hdl) return;
+    ir_tx_delay_done = true;
 	S_M1_Main_Q_t q_item;
 
 	q_item.q_data.ir_tx_data = 1; // any value, not used

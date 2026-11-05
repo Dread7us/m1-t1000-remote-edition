@@ -50,6 +50,8 @@ harness='''#include <stdio.h>
 #include "m1_ir_universal.h"
 #include "flipper_file.h"
 #include "m1_ir_remote_view.h"
+#include "m1_kaseikyo_fields.h"
+#include "flipper_ir.h"
 static ir_universal_cmd_t s_commands[IR_UNIVERSAL_MAX_CMDS];
 static uint16_t s_cmd_count;
 '''+ '\n'.join(functions)+'\n'+automation_api+r'''
@@ -78,6 +80,12 @@ int main(int argc, char **argv) {
  assert(ir_automation_buttons("Epson.ir")==2);
  assert(ir_automation_button(0,button,sizeof(button)) && !strcmp(button,"Power"));
  assert(ir_automation_button(0,button,sizeof(button))); /* repeated choice is legal */
+ assert(ir_automation_buttons("Denon.ir")==1);
+ assert(s_commands[0].address==0x3254 && s_commands[0].command==0x4005 && s_commands[0].flags==0x10);
+ flipper_file_t denon;flipper_ir_signal_t signal;
+ assert(flipper_ir_open(&denon,"Denon.ir"));assert(flipper_ir_read_signal(&denon,&signal));ff_close(&denon);
+ assert(signal.parsed.address==0x3254 && signal.parsed.command==0x4005 && signal.parsed.flags==0x10);
+ puts("PASS: actual universal and streaming parsers preserve Denon Kaseikyo manufacturer, genre, id and command fields");
  puts("PASS: actual automation picker API works cold, changes remotes, clears missing files and permits repeated Epson Power selection");
  puts("PASS: actual universal parser loads all 64 commands, rejects missing/invalid fields and empty raw data, disambiguates repeated raw names");
  return 0;
@@ -85,6 +93,7 @@ int main(int argc, char **argv) {
 '''
 (out/'parser.c').write_text(harness)
 header='Filetype: IR signals file\nVersion: 1\n#\n'
+(out/'Denon.ir').write_text(header+'name: Power\ntype: parsed\nprotocol: Kaseikyo\naddress: 41 54 32 00\ncommand: 05 00 00 00\n#\n')
 (out/'Epson.ir').write_text(header+'name: Power\ntype: parsed\nprotocol: NECext\naddress: 83 55 00 00\ncommand: 90 6F 00 00\n#\nname: Menu\ntype: parsed\nprotocol: NECext\naddress: 83 55 00 00\ncommand: 9A 65 00 00\n#\n')
 (out/'many.ir').write_text(header+''.join(f'name: Button{i}\ntype: parsed\nprotocol: NEC\naddress: 07 00 00 00\ncommand: {i:02X} 00 00 00\n#\n' for i in range(64)))
 (out/'malformed.ir').write_text(header+'''name: MissingAddress
@@ -124,7 +133,7 @@ address: 07 00 00 00
 command: 02 00 00 00
 #
 ''')
-exe=compile('parser',[out/'parser.c',shim/'ff_shim.c',src/'flipper_file.c'])
+exe=compile('parser',[out/'parser.c',*common])
 print(run([exe,out/'many.ir',out/'malformed.ir',repo/'ir_database/TV/Samsung.ir']))
 # Run the actual render functions with drawing-bound assertions. The mocked
 # font widths are conservative (tiny=4 px, regular=5 px per character).
@@ -263,6 +272,7 @@ harness=r"""#include <stdio.h>
 #include <assert.h>
 #include "m1_ui_theme.h"
 typedef int u8g2_t;typedef int u8g2_uint_t;
+#define m1_ui_capture_text(...) ((void)0)
 typedef enum {TEXT_ALIGN_LEFT,TEXT_ALIGN_CENTER,TEXT_ALIGN_RIGHT} S_M1_text_align_t;
 m1_ui_preferences_t m1_ui=M1_UI_DEFAULTS;
 static int color=1,left,right,calls;
@@ -377,6 +387,7 @@ static unsigned ir_automation_buttons(const char *p){(void)p;return 3;}
 static bool ir_automation_button(unsigned i,char *n,size_t c){snprintf(n,c,"button");return i<3;}
 static void transmit_command(const int *p){last_command=*p;++starts;s_remote_tx_started=!start_fail;}
 static void remote_tx_stop(void){s_remote_tx_started=false;++stops;}
+static bool remote_tx_finished(void){return mode!=1;}
 static void m1_led_fast_blink(int a,int b,int c){(void)a;(void)b;(void)c;}
 static bool sub_ghz_automation_check(const char *p){(void)p;return !blocked;}
 static bool automation_sgh_info_mock(const char *p,uint32_t *f,uint8_t *m){(void)p;*f=433920000;*m=0;return true;}
@@ -445,6 +456,7 @@ static void u8g2_SetDrawColor(u8g2_t *d,int c){(void)d;(void)c;}
 static void m1_ui_selection(u8g2_t *d,int x,int y,int w,int h,bool s){(void)d;(void)s;bounds(x,y,w,h);}
 static void u8g2_DrawXBMP(u8g2_t *d,int x,int y,int w,int h,const uint8_t *b){(void)d;assert(b);bounds(x,y,w,h);}
 static void m1_draw_text(u8g2_t *d,int x,int y,int w,const char *t,int a){(void)d;(void)a;assert(t);bounds(x,y-7,w,8);}
+static void m1_draw_marquee(u8g2_t *d,int x,int y,int w,const char *t){m1_draw_text(d,x,y,w,t,0);}
 static void u8g2_DrawRFrame(u8g2_t *d,int x,int y,int w,int h,int r){(void)d;(void)r;bounds(x,y,w,h);}
 static void u8g2_DrawBox(u8g2_t *d,int x,int y,int w,int h){(void)d;bounds(x,y,w,h);}
 static void m1_draw_bottom_bar(u8g2_t *d,const uint8_t *a,const char *b,const char *c,const uint8_t *e){(void)d;(void)a;(void)b;(void)c;(void)e;}
@@ -463,5 +475,202 @@ int main(void){
 (out/'automation-ui.c').write_text(screen)
 exe=compile('automation-ui',[out/'automation-ui.c']);print(run([exe]))
 
+
+def extract_body(source,signature):
+ start=source.index(signature);end=source.index('{',start)+1;depth=1
+ while depth:
+  if source[end]=='{':depth+=1
+  if source[end]=='}':depth-=1
+  end+=1
+ return source[start:end]
+
+# Exercise the exact interrupt TX branch with guard values and every buffer size.
+interrupt=(src/'m1_int_hdl.c').read_text()
+start=interrupt.index('if (htim == &Timerhdl_IrTx )');end=interrupt.index('\n\telse if (htim == &Timerhdl_IrRx )',start)
+irq=r"""#include <stdint.h>
+#include <stdbool.h>
+#include <assert.h>
+#include <stdio.h>
+typedef struct {unsigned ARR;} REG;
+typedef struct {REG *Instance;} TIM_HandleTypeDef;
+typedef struct {struct {unsigned ir_tx_data;} q_data;unsigned q_evt_type;} S_M1_Main_Q_t;
+typedef int portBASE_TYPE;
+#define pdFALSE 0
+#define FALSE 0
+#define Q_EVENT_IRRED_TX 1
+#define portYIELD_FROM_ISR(x) ((void)(x))
+static REG reg;static TIM_HandleTypeDef Timerhdl_IrTx={&reg};
+static bool ir_ota_data_tx_active;static unsigned ir_ota_data_tx_counter,ir_ota_data_tx_len;
+static uint16_t *pir_ota_data_tx_buffer;static unsigned complete,stopped;
+static int main_q_hdl;
+static void irsnd_on(void){}
+static void irsnd_off(void){}
+static void disable(TIM_HandleTypeDef *h){(void)h;++stopped;}
+#define __HAL_TIM_DISABLE(h) disable(h)
+static int xQueueSendFromISR(int q,S_M1_Main_Q_t *e,int *w){(void)q;(void)w;assert(e->q_evt_type==1);++complete;return 1;}
+static void transmit_irq(TIM_HandleTypeDef *htim){uint32_t cap_val;S_M1_Main_Q_t q_item;portBASE_TYPE xHigherPriorityTaskWoken=0;
+"""+interrupt[start:end]+r"""
+}
+int main(void){
+ uint16_t buffer[513];
+ for(unsigned n=1;n<=512;++n){for(unsigned i=0;i<n;++i)buffer[i]=(uint16_t)(100+i*2+(i%2));buffer[n]=65531;
+  ir_ota_data_tx_len=n;ir_ota_data_tx_counter=1;ir_ota_data_tx_active=true;pir_ota_data_tx_buffer=buffer;
+  reg.ARR=buffer[n>1?1:0];complete=stopped=0;
+  unsigned callbacks=0;while(ir_ota_data_tx_active){assert(++callbacks<=n);transmit_irq(&Timerhdl_IrTx);assert(reg.ARR!=65531);}
+  assert(callbacks==n&&complete==1&&stopped==1);
+ }
+ puts("PASS: actual IR interrupt handles 1..512 samples with no one-past-end prefetch, exactly one completion, and timer stop");return 0;
+}
+"""
+(out/'ir-irq.c').write_text(irq);exe=compile('ir-irq',[out/'ir-irq.c']);print(run([exe]))
+
+text_source=(src/'m1_text.c').read_text()
+text_functions='\n'.join(extract_body(text_source,name) for name in ['void m1_text_reset_scroll(', 'void m1_ui_capture_text(', 'void m1_draw_marquee(', 'static size_t next_line(', 'static unsigned page_count('])
+text_test=r"""#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
+#include <ctype.h>
+#include <assert.h>
+typedef int u8g2_t;
+#define TEXT_SLOTS 8
+#define TEXT_LENGTH 512
+#define TEXT_ALIGN_LEFT 0
+static char history[8][513];static unsigned history_count,history_next;static bool reading;
+static uint32_t scroll_start,ticks;static int left,right,seen_start,seen_end;
+static uint32_t HAL_GetTick(void){return ticks;}
+static unsigned u8g2_GetStrWidth(u8g2_t *d,const char *s){(void)d;return (unsigned)strlen(s)*5;}
+static void u8g2_DrawStr(u8g2_t *d,int x,int y,const char *s){(void)d;(void)y;assert(x>=left&&x+(int)strlen(s)*5<=right);if(!strncmp(s,"START",5))seen_start=1;if(strstr(s,"END"))seen_end=1;}
+static void m1_draw_text(u8g2_t *d,int x,int y,int w,const char *s,int a){(void)w;(void)a;u8g2_DrawStr(d,x,y,s);}
+"""+text_functions+r"""
+int main(void){
+ u8g2_t screen=0;char text[500];strcpy(text,"START ");for(int i=6;i<480;++i)text[i]='A'+i%26;strcpy(text+480," END");
+ left=3;right=63;m1_text_reset_scroll();
+ for(ticks=0;ticks<180000;ticks+=120)m1_draw_marquee(&screen,3,22,60,text);
+ assert(seen_start&&seen_end&&history_count==1&&!strcmp(history[0],text));
+ reading=true;m1_ui_capture_text(&screen,"another long text",10);assert(history_count==1);reading=false;
+ char line[128],joined[600];joined[0]=0;size_t position=0;
+ do {line[0]=0;position=next_line(&screen,text,position,line,60);assert(strlen(line)<=12);strcat(joined,line);}while(text[position]);
+ assert(!strcmp(joined,text));assert(page_count(&screen,text)>1);
+ assert(page_count(&screen,"")==1);position=next_line(&screen,"first\nsecond",0,line,118);assert(position==6&&!strcmp(line,"first"));
+ puts("PASS: actual scrolling exposes both ends of long text in bounds; wrapped pages preserve all source characters; overflow history is copied and deduplicated");return 0;
+}
+"""
+(out/'readable-text.c').write_text(text_test);exe=compile('readable-text',[out/'readable-text.c']);print(run([exe]))
+
+
+infrared=(src/'m1_infrared.c').read_text()
+machine=extract_body(infrared,'S_M1_IR_Tx_States infrared_transmit(uint8_t init)\n{')
+machine_test=r"""#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <assert.h>
+typedef enum {IR_TX_INIT,IR_TX_ACTIVE,IR_TX_POST_PROCESS,IR_TX_DELAY,IR_TX_COMPLETED} S_M1_IR_Tx_States;
+typedef int BaseType_t;typedef int TimerHandle_t;
+typedef struct {unsigned ARR,SR;} Registers;
+typedef struct {Registers *Instance;} Timer;
+static Registers regs;static Timer Timerhdl_IrTx={&regs};
+static unsigned stage,created,deleted,post;static TimerHandle_t ir_tx_timer_hdl;
+static bool ir_tx_delay_done;static bool ir_ota_data_tx_active;
+static uint16_t ir_ota_data_tx_counter,ir_ota_data_tx_len,*pir_ota_data_tx_buffer;
+static uint16_t samples[]={100,201,100};
+#define TRUE 1
+#define pdFAIL 0
+#define pdFALSE 0
+#define pdPASS 1
+#define NULL 0
+#define pdMS_TO_TICKS(x) (x)
+#define TIM_EVENTSOURCE_UPDATE 1
+#define TIM_FLAG_UPDATE 1
+#define __HAL_TIM_URS_ENABLE(h) ((void)(h))
+#define __HAL_TIM_URS_DISABLE(h) ((void)(h))
+#define __HAL_TIM_ENABLE(h) ((void)(h))
+#define __HAL_TIM_DISABLE(h) ((void)(h))
+#define HAL_IS_BIT_SET(a,b) ((a)&(b))
+#define CLEAR_BIT(a,b) ((a)&=~(b))
+static unsigned m1_make_ir_ota_multiframes(void){unsigned values[]={1,2000,1,0};assert(stage<4);return values[stage++];}
+static unsigned m1_check_ir_ota_frame_status(void){return 1;}
+static unsigned m1_get_ir_ota_frame_len(void){return 3;}
+static uint16_t *m1_get_ir_ota_buffer_ptr(void){return samples;}
+static void HAL_TIM_GenerateEvent(Timer *h,int e){(void)h;(void)e;}
+static void irsnd_on(void){}
+static uint8_t irsnd_tx_protocol(void){return 0x44;}
+static void m1_ir_ota_frame_post_process(unsigned protocol){assert(protocol==0x44);++post;}
+static void infrared_encode_timer_cb(int t){(void)t;}
+static int xTimerCreate(const char *n,unsigned t,int a,int b,void (*f)(int)){(void)n;(void)a;(void)b;(void)f;assert(t==2);++created;return 7;}
+static int xTimerStart(int t,int w){(void)w;assert(t==7);return 1;}
+static int xTimerDelete(int t,int w){(void)w;assert(t==7);++deleted;return 1;}
+"""+machine+r"""
+int main(void){for(unsigned command=0;command<1000;++command){stage=created=deleted=post=0;ir_tx_timer_hdl=0;ir_tx_delay_done=false;ir_ota_data_tx_active=false;
+ infrared_transmit(1);assert(infrared_transmit(0)==IR_TX_ACTIVE&&ir_ota_data_tx_active);
+ ir_ota_data_tx_active=false;assert(infrared_transmit(0)==IR_TX_DELAY&&created==1&&post==1);
+ for(int i=0;i<20;++i)assert(infrared_transmit(0)==IR_TX_DELAY&&created==1);
+ ir_tx_delay_done=true;assert(infrared_transmit(0)==IR_TX_ACTIVE&&deleted==1);
+ ir_ota_data_tx_active=false;assert(infrared_transmit(0)==IR_TX_COMPLETED&&post==2&&stage==4);
+ }puts("PASS: actual parsed IR state machine completes both frames and delay, uses TX protocol, creates/deletes each delay timer once across 1000 consecutive commands");return 0;}
+"""
+(out/'ir-frames.c').write_text(machine_test);exe=compile('ir-frames',[out/'ir-frames.c']);print(run([exe]))
+
+encoder=(repo/'Infrared/irsnd.c').read_text()
+carrier=extract_body(encoder,'static void irsnd_set_freq(IRSND_FREQ_TYPE freq)\n{')
+carrier_test=r"""#include <stdint.h>
+#include <assert.h>
+#include <stdio.h>
+typedef uint32_t IRSND_FREQ_TYPE;
+typedef struct {uint32_t Prescaler,CounterMode,Period,ClockDivision,AutoReloadPreload;} Init;
+typedef struct {Init Init;} Timer;
+typedef struct {uint32_t MasterOutputTrigger,MasterSlaveMode,MasterOutputTrigger2;} TIM_MasterConfigTypeDef;
+typedef struct {uint32_t OCMode,Pulse,OCPolarity,OCNPolarity,OCFastMode,OCIdleState,OCNIdleState;} TIM_OC_InitTypeDef;
+static Timer timer;static Timer *pir_timhdl_carrier=&timer;static uint32_t ir_carrier_pwm_channel=4,configs;
+#define IR_ENCODE_CARRIER_PRESCALE_FACTOR 10
+#define TIM_COUNTERMODE_UP 0
+#define TIM_CLOCKDIVISION_DIV1 0
+#define TIM_AUTORELOAD_PRELOAD_DISABLE 0
+#define TIM_TRGO_RESET 0
+#define TIM_MASTERSLAVEMODE_DISABLE 0
+#define TIM_OCMODE_PWM1 1
+#define TIM_OCPOLARITY_HIGH 0
+#define TIM_OCNPOLARITY_HIGH 0
+#define TIM_OCFAST_DISABLE 0
+#define TIM_OCIDLESTATE_RESET 0
+#define TIM_OCNIDLESTATE_RESET 0
+#define HAL_OK 0
+static unsigned HAL_RCC_GetPCLK2Freq(void){return 200000000;}
+static void Error_Handler(void){assert(0);}
+static int HAL_TIM_PWM_Init(Timer *t){assert(t->Init.Period==9);return 0;}
+static int HAL_TIMEx_MasterConfigSynchronization(Timer *t,TIM_MasterConfigTypeDef *c){(void)t;assert(c->MasterOutputTrigger==0&&c->MasterSlaveMode==0&&c->MasterOutputTrigger2==0);return 0;}
+static int HAL_TIM_PWM_ConfigChannel(Timer *t,TIM_OC_InitTypeDef *c,unsigned channel){(void)t;assert(channel==4&&c->OCPolarity==0&&c->OCIdleState==0&&c->OCNPolarity==0&&c->OCNIdleState==0&&c->Pulse==4);++configs;return 0;}
+"""+carrier+r"""
+int main(void){for(unsigned i=0;i<1000;++i){irsnd_set_freq(i%2?38000:56000);}assert(configs==1000);puts("PASS: actual carrier setup fully specifies polarity, idle states and master settings across 1000 alternating frequencies");return 0;}
+"""
+(out/'ir-carrier.c').write_text(carrier_test);exe=compile('ir-carrier',[out/'ir-carrier.c']);print(run([exe]))
+
+
+encoder=(repo/'Infrared/irsnd.c').read_text()
+case=extract_body(encoder,'case IRMP_KASEIKYO_PROTOCOL:')
+golden=r"""#include <stdint.h>
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_kaseikyo_fields.h"
+#define IRMP_KASEIKYO_PROTOCOL 1
+#define KASEIKYO_ADDRESS_LEN 16
+#define KASEIKYO_COMMAND_LEN 12
+#define IRSND_REPETITION_MASK 15
+#define TRUE 1
+typedef struct {uint16_t address,command;uint8_t flags,protocol;} IRMP_DATA;
+static uint8_t ir_tx_buffer[6],ir_tx_active;
+static uint16_t bitsreverse(uint16_t x,unsigned n){uint16_t r=0;while(n--){r=(uint16_t)((r<<1)|(x&1));x>>=1;}return r;}
+static void encode(IRMP_DATA irmp_data){uint16_t address,command;switch(irmp_data.protocol){
+"""+case+r"""
+}}
+int main(void){IRMP_DATA data={0};data.protocol=1;m1_kaseikyo_decode(0x00325441,5,&data.address,&data.command,&data.flags);encode(data);
+ const uint8_t expected[]={0x2a,0x4c,0x02,0x8a,0x00,0x88};assert(!memcmp(ir_tx_buffer,expected,6)&&ir_tx_active);
+ for(unsigned id=0;id<4;++id)for(unsigned g1=0;g1<16;++g1)for(unsigned g2=0;g2<16;++g2){uint32_t address=(id<<24)|(0x3254u<<8)|(g1<<4)|g2;m1_kaseikyo_decode(address,0x315,&data.address,&data.command,&data.flags);assert(m1_kaseikyo_address(data.address,data.command,data.flags)==address);assert((data.command&0x3ff)==0x315);}
+ puts("PASS: actual Kaseikyo encoder matches the Denon wire-byte golden vector; all id/genre combinations roundtrip without truncation");return 0;}
+"""
+(out/'kaseikyo.c').write_text(golden);exe=compile('kaseikyo',[out/'kaseikyo.c']);print(run([exe]))
+
+exe=compile('long-ir',[shim/'test_long_ir.c',*common]);print(run([exe]))
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

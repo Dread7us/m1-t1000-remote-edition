@@ -135,6 +135,7 @@ extern "C"
 {
 #endif
 
+extern uint8_t irsnd_tx_protocol(void);
 extern void                                     irsnd_init(TIM_HandleTypeDef *pTimHdl_Carrier, uint32_t tim_pwm_channel);
 #  ifdef __cplusplus
 extern bool                                     irsnd_is_busy (void);
@@ -144,7 +145,7 @@ extern bool                                     irsnd_make_ota_frame (void);
 extern uint8_t                                  irsnd_is_busy (void);
 extern uint8_t                                  irsnd_generate_tx_data(IRMP_DATA irmp_data);
 extern uint8_t                                  irsnd_make_ota_frame (void);
-uint8_t m1_make_ir_ota_multiframes(void);
+uint16_t m1_make_ir_ota_multiframes(void);
 uint16_t *m1_get_ir_ota_buffer_ptr(void);
 uint8_t m1_get_ir_ota_frame_len(void);
 uint8_t m1_check_ir_ota_frame_status(void);

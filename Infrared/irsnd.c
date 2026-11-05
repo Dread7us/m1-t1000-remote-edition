@@ -391,8 +391,8 @@ uint8_t m1_check_ir_ota_frame_status(void)
 /*============================================================================*/
 static void irsnd_set_freq(IRSND_FREQ_TYPE freq)
 {
-	TIM_MasterConfigTypeDef sMasterConfig;
-	TIM_OC_InitTypeDef sConfigOC;
+	TIM_MasterConfigTypeDef sMasterConfig = {0};
+	TIM_OC_InitTypeDef sConfigOC = {0};
 	//TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
 
 	uint32_t uwPrescalerValue = (uint32_t) (HAL_RCC_GetPCLK2Freq() / (freq*IR_ENCODE_CARRIER_PRESCALE_FACTOR)) - 1;
@@ -420,6 +420,8 @@ static void irsnd_set_freq(IRSND_FREQ_TYPE freq)
 	}
 
 	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
 	sConfigOC.Pulse = pir_timhdl_carrier->Init.Period/2; /* Duty cycle = 50% */
 	sConfigOC.OCNPolarity = TIM_OCPOLARITY_HIGH;
 	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
@@ -2633,7 +2635,7 @@ uint8_t m1_ir_ota_frame_post_process(uint8_t ir_protocol)
  * 			TRUE + delay period if required
 */
 /*============================================================================*/
-uint8_t m1_make_ir_ota_multiframes(void)
+uint16_t m1_make_ir_ota_multiframes(void)
 {
     if (ir_tx_active)
     {
@@ -2760,5 +2762,7 @@ uint8_t m1_make_ir_ota_multiframes(void)
     } // if (ir_tx_active)
 
     return ir_tx_active;
-} // uint8_t m1_make_ir_ota_multiframes(void)
+} // uint16_t m1_make_ir_ota_multiframes(void)
 
+
+uint8_t irsnd_tx_protocol(void) { return ir_tx_protocol; }

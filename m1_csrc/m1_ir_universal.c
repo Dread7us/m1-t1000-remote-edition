@@ -21,6 +21,7 @@
 #include "main.h"
 #include "m1_ir_universal.h"
 #include "flipper_file.h"
+#include "m1_kaseikyo_fields.h"
 #include "m1_system.h"
 #include "m1_display.h"
 #include "m1_infrared.h"
@@ -116,6 +117,8 @@ static void draw_commands(const char *title, uint16_t selection);
 static void show_remote_grid(const char *title, uint16_t *selection);
 static void remote_tx_stop(void);
 static bool s_automation_tx;
+static bool s_remote_tx_raw;
+static bool remote_tx_finished(void);
 static void transmit_command(const ir_universal_cmd_t *cmd);
 static void transmit_raw_command(const ir_universal_cmd_t *cmd);
 static void ir_power_blast(const char *title, const char *const *paths, uint8_t n_paths);
@@ -850,6 +853,7 @@ static uint8_t map_flipper_protocol(const char *name)
 /*============================================================================*/
 static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 {
+	uint32_t source_address=0,source_command=0;
 	bool got_name = false;
 	bool got_type = false;
 	bool got_address = false, got_command = false;
@@ -896,6 +900,7 @@ static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 			uint8_t hex_buf[4] = {0};
 			uint8_t n = ff_parse_hex_bytes(ff_get_value(ff), hex_buf, 4);
 			got_address = (n > 0);
+            for(unsigned i=0;i<n;++i)source_address|=(uint32_t)hex_buf[i]<<(8*i);
 			cmd->address = (n >= 2) ? (uint16_t)(hex_buf[0] | ((uint16_t)hex_buf[1] << 8))
 			                        : (uint16_t)hex_buf[0];
 		}
@@ -904,6 +909,7 @@ static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 			uint8_t hex_buf[4] = {0};
 			uint8_t n = ff_parse_hex_bytes(ff_get_value(ff), hex_buf, 4);
 			got_command = (n > 0);
+            for(unsigned i=0;i<n;++i)source_command|=(uint32_t)hex_buf[i]<<(8*i);
 			cmd->command = (n >= 2) ? (uint16_t)(hex_buf[0] | ((uint16_t)hex_buf[1] << 8))
 			                        : (uint16_t)hex_buf[0];
 		}
@@ -913,22 +919,9 @@ static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 		}
 		else if (strcmp(ff_get_key(ff), "data") == 0 && is_raw_type)
 		{
-			/* Count the raw timing values (space-separated integers) */
-			const char *p = ff_get_value(ff);
-			uint16_t count = 0;
-			while (*p)
-			{
-				/* Skip whitespace */
-				while (*p == ' ')
-					p++;
-				if (*p == '\0')
-					break;
-				count++;
-				/* Skip non-whitespace */
-				while (*p && *p != ' ')
-					p++;
-			}
-			cmd->raw_count = count;
+            uint16_t count=0;
+            if(!ff_read_int32_stream(ff,NULL,FLIPPER_IR_RAW_MAX_SAMPLES-cmd->raw_count,&count)){got_type=false;cmd->raw_count=0;}
+            else cmd->raw_count+=count;
 		}
 	}
 
@@ -938,6 +931,7 @@ static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)
 		{
 			cmd->is_raw = false;
 			cmd->flags = 0; /* Full frame (not repeat) */
+            if(cmd->protocol==IRMP_KASEIKYO_PROTOCOL)m1_kaseikyo_decode(source_address,source_command,&cmd->address,&cmd->command,&cmd->flags);
 			cmd->valid = true;
 			return true;
 		}
@@ -1026,6 +1020,14 @@ static void remote_tx_stop(void)
         s_remote_tx_started = false;
     }
     m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
+}
+
+/* A frame interrupt is not the end of a multi-frame protocol. */
+static bool remote_tx_finished(void) {
+    if (!s_remote_tx_started) return true;
+    if (ir_ota_data_tx_active) return false;
+    if (s_remote_tx_raw) return true;
+    return infrared_transmit(0) == IR_TX_COMPLETED;
 }
 
 static void draw_commands(const char *title, uint16_t selection)
@@ -1124,13 +1126,13 @@ static void show_remote_grid(const char *title, uint16_t *selection)
     draw_remote_grid(title, cursor);
     for (;;) {
         if (xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(50)) != pdTRUE) {
-            if (s_remote_tx_started && (!ir_ota_data_tx_active || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
+            if (s_remote_tx_started && (remote_tx_finished() || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
                 remote_tx_stop();
                 draw_remote_grid(title, cursor);
             }
             continue;
         }
-        if (q.q_evt_type == Q_EVENT_IRRED_TX) remote_tx_stop();
+        if (q.q_evt_type == Q_EVENT_IRRED_TX && remote_tx_finished()) remote_tx_stop();
         else if (q.q_evt_type == Q_EVENT_KEYPAD && xQueueReceive(button_events_q_hdl, &keys, 0) == pdTRUE) {
             if (keys.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK) break;
             if (keys.event[BUTTON_UP_KP_ID] == BUTTON_EVENT_CLICK) cursor = ir_remote_grid_move(cursor, s_grid_order, s_grid_count, 0, -1);
@@ -1212,7 +1214,7 @@ static void show_commands(const char *ir_file_path)
 	while (1)
 	{
 		ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(50));
-		if (s_remote_tx_started && (!ir_ota_data_tx_active || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
+		if (s_remote_tx_started && (remote_tx_finished() || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
 			remote_tx_stop();
 			draw_commands(title, selection);
 		}
@@ -1260,8 +1262,8 @@ static void show_commands(const char *ir_file_path)
 			} /* if (q_item.q_evt_type == Q_EVENT_KEYPAD) */
 			else if (q_item.q_evt_type == Q_EVENT_IRRED_TX)
 			{
-				/* IR TX completed — tear down hardware cleanly */
-				remote_tx_stop();
+				/* Advance a completed frame; keep protocol-required frames intact. */
+                if (remote_tx_finished()) remote_tx_stop();
 				m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
 				draw_commands(title, selection);
 			}
@@ -1285,6 +1287,7 @@ static void transmit_command(const ir_universal_cmd_t *cmd)
 	if (cmd == NULL || !cmd->valid)
 		return;
 
+	s_remote_tx_raw = cmd->is_raw;
 	if (cmd->is_raw)
 	{
 		transmit_raw_command(cmd);
@@ -1373,12 +1376,10 @@ void ir_universal_play_file(const char *path)
 		 * queue receive (yields to other tasks — a busy-spin here starves the
 		 * tick and wedges the device), with a safety timeout so a TX that never
 		 * completes can't hang us. Then tear the hardware down. */
-		while (ir_ota_data_tx_active &&
-		       (xTaskGetTickCount() - t0) < pdMS_TO_TICKS(3000))
+		while (!remote_tx_finished() &&
+		       (xTaskGetTickCount() - t0) < pdMS_TO_TICKS(5000))
 		{
-			if (xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(50)) == pdTRUE &&
-			    q.q_evt_type == Q_EVENT_IRRED_TX)
-				break;   /* TX finished */
+			xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(20));
 		}
 		remote_tx_stop();   /* forces carrier off + deinits timers */
 	}
@@ -1515,8 +1516,9 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 	__HAL_TIM_ENABLE(&Timerhdl_IrTx);
 
 	/* Load next entry for the second period */
-	if (ota_len > 1)
-		Timerhdl_IrTx.Instance->ARR = s_raw_ota_buffer[++ir_ota_data_tx_counter];
+	ir_ota_data_tx_counter = 1;
+    if (ota_len > 1)
+		Timerhdl_IrTx.Instance->ARR = s_raw_ota_buffer[1];
 
 	m1_buzzer_notification();
 
@@ -2110,7 +2112,8 @@ m1_action_result_t ir_automation_send(const char *path,uint16_t index,m1_action_
     while (xTaskGetTickCount()-start<pdMS_TO_TICKS(5000)) {
         S_M1_Main_Q_t event;
         if (cancel && cancel()) {result=ACTION_CANCELLED;break;}
-        if (xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(20))==pdTRUE && event.q_evt_type==Q_EVENT_IRRED_TX) {result=ACTION_OK;break;}
+        xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(20));
+        if (remote_tx_finished()) {result=ACTION_OK;break;}
     }
     remote_tx_stop();
     m1_led_fast_blink(LED_BLINK_ON_RGB,LED_FASTBLINK_PWM_OFF,LED_FASTBLINK_ONTIME_OFF);

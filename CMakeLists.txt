@@ -82,6 +82,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
+    M1_UI_TEXT_CAPTURE=1
     # Add user defined symbols
 )
 

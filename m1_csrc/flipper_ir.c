@@ -17,6 +17,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "flipper_ir.h"
+#include "m1_kaseikyo_fields.h"
 
 /*************************** D E F I N E S ************************************/
 
@@ -199,6 +200,7 @@ bool flipper_ir_open(flipper_file_t *ctx, const char *path)
  */
 bool flipper_ir_read_signal(flipper_file_t *ctx, flipper_ir_signal_t *out)
 {
+    uint32_t source_address=0;
 	bool got_name = false;
 	bool got_type = false;
 	uint8_t hex_buf[4];
@@ -214,11 +216,14 @@ bool flipper_ir_read_signal(flipper_file_t *ctx, flipper_ir_signal_t *out)
 	while (ff_read_line(ctx))
 	{
 		/* Skip separator lines */
-		if (ff_is_separator(ctx))
-			continue;
+		if (ff_is_separator(ctx)) {if(got_name && got_type && out->type==FLIPPER_IR_SIGNAL_RAW && out->valid)return true;continue;}
 
 		if (!ff_parse_kv(ctx))
 			continue;
+
+        if(got_name && got_type && out->type==FLIPPER_IR_SIGNAL_RAW && out->valid && ff_strcasecmp(ff_get_key(ctx),"name")==0) {
+            ctx->pending_line=true;return true;
+        }
 
 		/* Look for "name:" to start a signal block */
 		if (!got_name)
@@ -260,12 +265,14 @@ bool flipper_ir_read_signal(flipper_file_t *ctx, flipper_ir_signal_t *out)
 			{
 				hex_count = ff_parse_hex_bytes(ff_get_value(ctx), hex_buf, 4);
 				out->parsed.address = ff_hex_bytes_to_uint16_le(hex_buf, hex_count);
+                for(unsigned i=0;i<hex_count;++i)source_address|=(uint32_t)hex_buf[i]<<(8*i);
 			}
 			else if (ff_strcasecmp(ff_get_key(ctx), "command") == 0)
 			{
 				hex_count = ff_parse_hex_bytes(ff_get_value(ctx), hex_buf, 4);
 				out->parsed.command = ff_hex_bytes_to_uint16_le(hex_buf, hex_count);
 				out->parsed.flags = 0;
+                if(out->parsed.protocol==IRMP_KASEIKYO_PROTOCOL)m1_kaseikyo_decode(source_address,out->parsed.command,&out->parsed.address,&out->parsed.command,&out->parsed.flags);
 				out->valid = true;
 				return true;  /* Parsed signal complete */
 			}
@@ -301,13 +308,10 @@ bool flipper_ir_read_signal(flipper_file_t *ctx, flipper_ir_signal_t *out)
 			}
 			else if (ff_strcasecmp(ff_get_key(ctx), "data") == 0)
 			{
-				out->raw.sample_count = ff_parse_int32_array(
-					ff_get_value(ctx),
-					out->raw.samples,
-					FLIPPER_IR_RAW_MAX_SAMPLES
-				);
-				out->valid = (out->raw.sample_count > 0);
-				return true;  /* Raw signal complete */
+				uint16_t added=0;
+                if(!ff_read_int32_stream(ctx,out->raw.samples+out->raw.sample_count,FLIPPER_IR_RAW_MAX_SAMPLES-out->raw.sample_count,&added))return false;
+                out->raw.sample_count+=added;
+                out->valid=out->raw.sample_count>0;
 			}
 		}
 	}
@@ -380,16 +384,18 @@ bool flipper_ir_write_signal(flipper_file_t *ctx, const flipper_ir_signal_t *sig
 			return false;
 
 		/* Convert uint16 address to 4-byte little-endian hex */
-		addr_bytes[0] = (uint8_t)(sig->parsed.address & 0xFF);
-		addr_bytes[1] = (uint8_t)((sig->parsed.address >> 8) & 0xFF);
-		addr_bytes[2] = 0;
-		addr_bytes[3] = 0;
+		uint32_t source_address=sig->parsed.protocol==IRMP_KASEIKYO_PROTOCOL?m1_kaseikyo_address(sig->parsed.address,sig->parsed.command,sig->parsed.flags):sig->parsed.address;
+        uint16_t source_command=sig->parsed.protocol==IRMP_KASEIKYO_PROTOCOL?(sig->parsed.command&0x3ff):sig->parsed.command;
+		addr_bytes[0] = (uint8_t)(source_address & 0xFF);
+		addr_bytes[1] = (uint8_t)((source_address >> 8) & 0xFF);
+		addr_bytes[2] = (uint8_t)(source_address >> 16);
+		addr_bytes[3] = (uint8_t)(source_address >> 24);
 		if (!ff_write_kv_hex(ctx, "address", addr_bytes, 4))
 			return false;
 
 		/* Convert uint16 command to 4-byte little-endian hex */
-		cmd_bytes[0] = (uint8_t)(sig->parsed.command & 0xFF);
-		cmd_bytes[1] = (uint8_t)((sig->parsed.command >> 8) & 0xFF);
+		cmd_bytes[0] = (uint8_t)(source_command & 0xFF);
+		cmd_bytes[1] = (uint8_t)((source_command >> 8) & 0xFF);
 		cmd_bytes[2] = 0;
 		cmd_bytes[3] = 0;
 		if (!ff_write_kv_hex(ctx, "command", cmd_bytes, 4))
@@ -412,20 +418,14 @@ bool flipper_ir_write_signal(flipper_file_t *ctx, const flipper_ir_signal_t *sig
 
 		/* Write data as space-separated int32 values */
 		pos = 0;
-		for (i = 0; i < sig->raw.sample_count; i++)
-		{
-			int written = snprintf(&buf[pos], sizeof(buf) - (size_t)pos,
-			                       "%s%ld",
-			                       (i > 0) ? " " : "",
-			                       (long)sig->raw.samples[i]);
-			if (written < 0 || (pos + written) >= (int)(sizeof(buf) - 1))
-				break;
-			pos += written;
-		}
-		buf[pos] = '\0';
-
-		if (!ff_write_kv_str(ctx, "data", buf))
-			return false;
+        pos=snprintf(buf,sizeof(buf),"data:");
+        for(i=0;i<sig->raw.sample_count;++i) {
+            char token[24];int n=snprintf(token,sizeof(token)," %ld",(long)sig->raw.samples[i]);
+            if(n<0 || n>=(int)sizeof(token))return false;
+            if(pos+n>=(int)sizeof(buf)) {buf[pos]=0;if(f_printf(&ctx->fh,"%s",buf)<0)return false;pos=0;}
+            memcpy(buf+pos,token,n);pos+=n;
+        }
+        buf[pos]=0;if(f_printf(&ctx->fh,"%s\n",buf)<0)return false;
 	}
 
 	return true;

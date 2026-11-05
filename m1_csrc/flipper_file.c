@@ -186,6 +186,7 @@ bool ff_read_line(flipper_file_t *ctx)
 {
 	if (ctx == NULL || !ctx->is_open || ctx->eof)
 		return false;
+    if(ctx->pending_line){ctx->pending_line=false;return true;}
 
 	for (;;)
 	{
@@ -195,7 +196,8 @@ bool ff_read_line(flipper_file_t *ctx)
 			return false;
 		}
 
-		ff_strip_trailing_whitespace(ctx->line);
+        ctx->line_continues=strchr(ctx->line,'\n')==NULL && strlen(ctx->line)==FF_LINE_BUF_LEN-1;
+        if(!ctx->line_continues)ff_strip_trailing_whitespace(ctx->line);
 
 		/* Skip completely empty lines */
 		if (ff_line_is_empty(ctx->line))
@@ -553,4 +555,27 @@ uint16_t ff_parse_int32_array(const char *str, int32_t *out, uint16_t max_count)
 	}
 
 	return count;
+}
+
+/* Consume a complete physical data field, including split numeric tokens. */
+bool ff_read_int32_stream(flipper_file_t *ctx,int32_t *out,uint16_t capacity,uint16_t *count) {
+    char *p=strstr(ctx->line,": ");char token[16];unsigned used=0;uint16_t n=0;bool valid=true;
+    if(!p)return false;p+=2;
+    for (;;) {
+        while(*p) {
+            unsigned char c=(unsigned char)*p++;
+            if(c==' '||c=='\t'||c=='\r'||c=='\n') {
+                if(used) {
+                    token[used]=0;char *end;long long value=strtoll(token,&end,10);
+                    if(*end || value < -2147483647LL || value > 2147483647LL || n>=capacity)valid=false;
+                    else {if(out)out[n]=(int32_t)value;++n;}used=0;
+                }
+            } else {if(used<sizeof(token)-1)token[used++]=(char)c;else valid=false;}
+        }
+        if(!ctx->line_continues)break;
+        if(!f_gets(ctx->line,FF_LINE_BUF_LEN,&ctx->fh)){ctx->eof=true;break;}
+        ctx->line_continues=strchr(ctx->line,'\n')==NULL && strlen(ctx->line)==FF_LINE_BUF_LEN-1;p=ctx->line;
+    }
+    if(used){token[used]=0;char *end;long long value=strtoll(token,&end,10);if(*end || value < -2147483647LL || value > 2147483647LL || n>=capacity)valid=false;else {if(out)out[n]=(int32_t)value;++n;}}
+    *count=n;return valid && n>0;
 }

@@ -488,7 +488,8 @@ uint8_t m1_gui_submenu_update(const char *phmenu[], uint8_t num_items, uint8_t s
 			}
 		}
 
-		m1_draw_text(&m1_u8g2, row_text_x, row_text_y, row_box_x + row_box_w - row_text_x - 3, phmenu[run - 1], TEXT_ALIGN_LEFT);
+		if (run==active_item) m1_draw_marquee(&m1_u8g2,row_text_x,row_text_y,row_box_x+row_box_w-row_text_x-3,phmenu[run-1]);
+        else m1_draw_text(&m1_u8g2, row_text_x, row_text_y, row_box_x + row_box_w - row_text_x - 3, phmenu[run - 1], TEXT_ALIGN_LEFT);
 		u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 	} // for (run=disp_window_top_row; run<=disp_window_bottom_row; run++)
 
@@ -895,109 +896,13 @@ void m1_info_box_display_draw(uint8_t box_row, const uint8_t *ptext)
   * @retval
   */
 /*============================================================================*/
-uint8_t m1_message_box(u8g2_t *u8g2, const char *title1, const char *title2, const char *title3, const char *buttons)
+uint8_t m1_message_box(u8g2_t *u8g2,const char *title1,const char *title2,const char *title3,const char *buttons)
 {
-
-  (void)buttons;
-  m1_u8g2_firstpage();
-  m1_draw_status_panel(u8g2, title1, NULL, NULL, 0, 0, title2, title3, NULL);
-  m1_draw_bottom_bar(u8g2, button_back_8x8, "Back", "OK", button_ok_8x8);
-  m1_u8g2_nextpage();
-
-  for(;;)
-  {
-      S_M1_Main_Q_t q_item;
-      S_M1_Buttons_Status this_button_status;
-      BaseType_t ret;
-
-		ret = xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY);
-		if (ret==pdTRUE)
-		{
-			if ( q_item.q_evt_type==Q_EVENT_KEYPAD )
-			{
-				// Notification is only sent to this task when there's any button activity,
-				// so it doesn't need to wait when reading the event from the queue
-				ret = xQueueReceive(button_events_q_hdl, &this_button_status, 0);
-                if (ret == pdTRUE && (this_button_status.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK
-                  || this_button_status.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK))
-				{
-					; // Do extra tasks here if needed
-
-					xQueueReset(main_q_hdl); // Reset main q before return
-					break; // Exit and return to the calling task (subfunc_handler_task)
-				} // if ( m1_buttons_status[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK )
-				else
-				{
-					; // Do other things for this task, if needed
-				}
-			} // if ( q_item.q_evt_type==Q_EVENT_KEYPAD )
-			else
-			{
-				; // Do other things for this task
-			}
-		} // if (ret==pdTRUE)
-
-  }
-
-  /* never reached */
-  return 0;
+    (void)buttons;m1_text_dialog(u8g2,title1,title2,title3,NULL);return 0;
 }
-
-uint8_t m1_message_box_choice(u8g2_t *u8g2, const char *title1, const char *title2, const char *title3, const char *buttons)
+uint8_t m1_message_box_choice(u8g2_t *u8g2,const char *title1,const char *title2,const char *title3,const char *buttons)
 {
-    uint8_t cursor = 0;
-    uint8_t button_cnt = u8x8_GetStringLineCnt(buttons);
-    if (button_cnt == 0) return 0;
-
-    for (;;) {
-        u8g2_FirstPage(u8g2);
-        do {
-            u8g2_SetDrawColor(u8g2, 1);
-            m1_draw_header_bar(u8g2, title1, NULL);
-            m1_draw_content_frame(u8g2, 2, 14, 124, 33);
-            u8g2_SetFont(u8g2, M1_DISP_FUNC_MENU_FONT_N);
-            m1_draw_text(u8g2, 6, 27, 116, title2, TEXT_ALIGN_LEFT);
-            m1_draw_text(u8g2, 6, 39, 116, title3, TEXT_ALIGN_LEFT);
-            /* Each label ends at its newline; never draw the next label too. */
-            uint8_t first = cursor >= 2 ? cursor - 1 : 0;
-            uint8_t shown = button_cnt < 3 ? button_cnt : 3;
-            if (first + shown > button_cnt) first = button_cnt - shown;
-            for (uint8_t i=first; i<first+shown; ++i) {
-                const char *label=u8x8_GetStringLineStart(i, buttons);
-                char text[32]; size_t n=0;
-                while (label[n] && label[n]!='\n' && n<sizeof(text)-1) {text[n]=label[n]; ++n;}
-                text[n]=0;
-                int width=124/shown, x=2+(i-first)*width;
-                m1_ui_selection(u8g2,x,51,width-2,12,i==cursor);
-                m1_draw_text(u8g2,x+2,60,width-6,text,TEXT_ALIGN_CENTER);
-            }
-            u8g2_SetDrawColor(u8g2,1);
-        } while (u8g2_NextPage(u8g2));
-
-        S_M1_Main_Q_t q_item;
-        S_M1_Buttons_Status btn_status;
-        if (xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY) == pdTRUE) {
-            if (q_item.q_evt_type == Q_EVENT_KEYPAD) {
-                if (xQueueReceive(button_events_q_hdl, &btn_status, 0) != pdTRUE) continue;
-                if (btn_status.event[BUTTON_LEFT_KP_ID] == BUTTON_EVENT_CLICK || 
-                    btn_status.event[BUTTON_UP_KP_ID] == BUTTON_EVENT_CLICK) {
-                    if (cursor > 0) cursor--; else cursor = button_cnt - 1;
-                }
-                else if (btn_status.event[BUTTON_RIGHT_KP_ID] == BUTTON_EVENT_CLICK || 
-                         btn_status.event[BUTTON_DOWN_KP_ID] == BUTTON_EVENT_CLICK) {
-                    if (cursor < button_cnt - 1) cursor++; else cursor = 0;
-                }
-                else if (btn_status.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK) {
-                    xQueueReset(main_q_hdl);
-                    return cursor + 1;
-                }
-                else if (btn_status.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK) {
-                    xQueueReset(main_q_hdl);
-                    return 0;
-                }
-            }
-        }
-    }
+    return m1_text_dialog(u8g2,title1,title2,title3,buttons);
 }
 
 
@@ -1090,8 +995,7 @@ void m1_draw_header_bar(u8g2_t *u8g2, const char *title, const char *badge)
     uint16_t badge_width=badge ? u8g2_GetStrWidth(u8g2,badge) : 0;
     if(badge_width>30)badge_width=30;
 	title_w = badge ? (uint8_t)(80-badge_width) : 82;
-	m1_draw_text(u8g2, 3, 8, title_w,
-	             title ? title : M1_PRODUCT_MARK, TEXT_ALIGN_LEFT);
+	m1_draw_marquee(u8g2,3,8,title_w,title ? title : M1_PRODUCT_MARK);
 	if (badge != NULL)
 	{
 		m1_draw_text(u8g2, 56, 8, 30, badge, TEXT_ALIGN_RIGHT);
@@ -1217,6 +1121,7 @@ void m1_draw_text(u8g2_t *u8g2,
                  S_M1_text_align_t align)
 {
     if (text == NULL || max_width <= 0) return;
+    m1_ui_capture_text(u8g2,text,(unsigned)max_width);
     char clipped[96];
     if (u8g2_GetStrWidth(u8g2, text) > max_width) {
         size_t n = strlen(text);

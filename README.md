@@ -45,6 +45,14 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Readable text and IR recovery
+
+<img src="documentation/remote-edition/readability-preview.png" alt="Long selections scrolling and message text wrapped across readable pages" width="960">
+
+**Revision 8 · Built and native-tested; physical verification pending.** Long selections scroll, common messages wrap into pages, and **System → Read screen text** opens overflowing text from older screens. IR updates address PWM initialization, timer recovery, final-sample bounds, complete protocol frames, and Denon/Kaseikyo field conversion.
+
+[Reading controls, coverage, and IR validation](documentation/remote-edition/text-and-ir.md)
+
 ## Remote automations
 
 **One sequence. Multiple remotes.** Build named chains under **Infrared → Automations**: select individual IR buttons, insert waits, and include native M1 Sub-GHz recordings.
@@ -65,6 +73,7 @@ Reorder, rename, replace, duplicate, or delete actions and chains. Repeat a butt
 
 | Addition | Result |
 |---|---|
+| **Readable text and IR recovery** | Scrolling selections, wrapped/paged messages, an application-wide overflow text viewer, and deterministic IR initialization/completion. [Coverage and validation](documentation/remote-edition/text-and-ir.md). |
 | **Cross-remote automations** | Named IR/Sub-GHz/Wait sequences with an icon-based editor, reordering, duplication, progress, cancellation, and source checks. [Guide and supported formats](documentation/remote-edition/automations.md). |
 | **Appearance foundation** | Three themes, filled/outlined selections, header clock and battery options, reduced animation, and shared-menu wrapping. **System → Appearance**. [Preview, coverage, and roadmap](documentation/remote-edition/appearance.md). |
 | **Avatar splash screen** | A personalized monochrome avatar emblem and refreshed startup layout. [Preview and artwork details](documentation/remote-edition/avatar-splash.md). |

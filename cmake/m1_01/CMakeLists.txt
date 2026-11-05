@@ -482,6 +482,7 @@ target_sources(m1_01 INTERFACE
     # === Enhanced firmware: Universal Remote + Crypto (Phase 3+5) ===
     ../../m1_csrc/m1_ir_universal.c
     ../../m1_csrc/m1_ir_custom.c
+    ../../m1_csrc/m1_text.c
     ../../m1_csrc/m1_automation.c
     ../../m1_csrc/m1_automation_file.c
     ../../m1_csrc/m1_crypto.c

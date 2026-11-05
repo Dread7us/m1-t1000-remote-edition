@@ -873,12 +873,13 @@ void menu_main_handler_task(void *param)
 	m1_gui_menu_update(pthis_submenu, 0, MENU_UPDATE_INIT);
 	while(1)
 	{
-		uint32_t q_wait_ms = 30000;
+		uint32_t q_wait_ms = 120;
+        static uint32_t logo_last_tick;
 		/* On the main menu, wake on the logo animation cadence (fast while the
 		 * logo slides in, then a long pause between loops) instead of the
 		 * 30 s idle refresh. */
 		if (m1_device_stat.op_mode == M1_OPERATION_MODE_MENU_ON && menu_ctl.menu_level == 0)
-			q_wait_ms = m1_main_menu_logo_anim_next_delay_ms();
+			q_wait_ms = m1_main_menu_logo_anim_next_delay_ms()<120 ? m1_main_menu_logo_anim_next_delay_ms():120;
 
 		menu_update_stat = MENU_UPDATE_NONE;
 		ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(q_wait_ms));
@@ -889,8 +890,8 @@ void menu_main_handler_task(void *param)
 				/* At the main menu, only redraw when the logo actually moves. */
 				if (menu_ctl.menu_level == 0)
 				{
-					if (m1_main_menu_logo_anim_tick())
-						m1_gui_menu_update(pthis_submenu, menu_ctl.menu_item_active, MENU_UPDATE_REFRESH);
+					if(HAL_GetTick()-logo_last_tick>=m1_main_menu_logo_anim_next_delay_ms()) {logo_last_tick=HAL_GetTick();m1_main_menu_logo_anim_tick();}
+                    m1_gui_menu_update(pthis_submenu, menu_ctl.menu_item_active, MENU_UPDATE_REFRESH);
 				}
 				else
 				{
@@ -906,6 +907,7 @@ void menu_main_handler_task(void *param)
 			continue; // Wait for a new notification when the attempt to read the button event fails
 
 		m1_device_stat.active_timestamp = HAL_GetTick();
+        m1_text_reset_scroll();
 
 		if (m1_shutdown_prompt_take())
 		{

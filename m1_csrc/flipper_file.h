@@ -27,6 +27,8 @@ typedef struct {
 	char   value[FF_VALUE_MAX_LEN];
 	bool   is_open;
 	bool   eof;
+    bool line_continues;
+    bool pending_line;
 } flipper_file_t;
 
 /* Open a file for reading */
@@ -43,6 +45,7 @@ void ff_close(flipper_file_t *ctx);
 
 /* Read next non-comment, non-empty line. Returns false at EOF */
 bool ff_read_line(flipper_file_t *ctx);
+bool ff_read_int32_stream(flipper_file_t *ctx,int32_t *out,uint16_t capacity,uint16_t *count);
 
 /* Parse current line as "key: value". Returns false if not key-value format */
 bool ff_parse_kv(flipper_file_t *ctx);

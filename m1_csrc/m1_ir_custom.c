@@ -369,12 +369,12 @@ static void ir_custom_draw_list(uint16_t selection, uint16_t total)
 		{
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, ir_custom_item_text(idx));
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, ir_custom_item_text(idx));
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
 		else
 		{
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, ir_custom_item_text(idx));
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, ir_custom_item_text(idx));
 		}
 	}
 
@@ -581,12 +581,12 @@ static void ir_custom_draw_remote_menu(const char *name, uint8_t selection)
 		{
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_remote_menu_items[i]);
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, s_remote_menu_items[i]);
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
 		else
 		{
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_remote_menu_items[i]);
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, s_remote_menu_items[i]);
 		}
 	}
 
@@ -857,12 +857,12 @@ static void ir_custom_draw_button_list(const char *name, uint16_t selection, uin
 		if (idx == selection)
 		{
 			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_button_names[idx]);
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, s_button_names[idx]);
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
 		else
 		{
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_button_names[idx]);
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, s_button_names[idx]);
 		}
 	}
 
@@ -893,12 +893,12 @@ static void ir_custom_draw_action_menu(const char *name, uint8_t selection)
 		if (i == selection)
 		{
 			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_button_action_items[i]);
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, s_button_action_items[i]);
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
 		else
 		{
-			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_button_action_items[i]);
+			m1_draw_marquee(&m1_u8g2, 4, y + 8, 120, s_button_action_items[i]);
 		}
 	}
 
@@ -1070,7 +1070,9 @@ static void ir_custom_edit_buttons(const char *path, const char *name)
 
 	while (1)
 	{
-		ret = xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY);
+		ir_custom_draw_button_list(name, selection, s_button_count);
+        ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(120));
+        if(ret==pdTRUE)m1_text_reset_scroll();
 		if (ret != pdTRUE || q_item.q_evt_type != Q_EVENT_KEYPAD)
 			continue;
 
@@ -1135,7 +1137,9 @@ static void ir_custom_open_remote(const char *source_path, const char *name)
 
 	while (1)
 	{
-		ret = xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY);
+		ir_custom_draw_remote_menu(name, selection);
+        ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(120));
+        if(ret==pdTRUE)m1_text_reset_scroll();
 		if (ret != pdTRUE)
 			continue;
 
@@ -1211,7 +1215,9 @@ void ir_custom_run(void)
 
 	while (1)
 	{
-		ret = xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY);
+		ir_custom_draw_list(selection, total);
+        ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(120));
+        if(ret==pdTRUE)m1_text_reset_scroll();
 		if (ret != pdTRUE)
 			continue;
 

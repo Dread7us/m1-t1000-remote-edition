@@ -27,7 +27,8 @@ static void error(const char *title,const char *detail) {m1_message_box(&m1_u8g2
 static int key(void) {
     S_M1_Main_Q_t event;S_M1_Buttons_Status buttons;
     for (;;) {
-        if (xQueueReceive(main_q_hdl,&event,portMAX_DELAY)!=pdTRUE || event.q_evt_type!=Q_EVENT_KEYPAD) continue;
+        if (xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(120))!=pdTRUE) return -1;
+        if (event.q_evt_type!=Q_EVENT_KEYPAD) continue;
         if (xQueueReceive(button_events_q_hdl,&buttons,0)!=pdTRUE) continue;
         for (unsigned i=0;i<NUM_BUTTONS_MAX;++i) if (buttons.event[i]==BUTTON_EVENT_CLICK) return (int)i;
     }
@@ -53,15 +54,17 @@ static void list_draw(const char *title,unsigned selected,unsigned count,bool st
         m1_ui_selection(&m1_u8g2,2,y,124,11,i==selected);
         const uint8_t *icon=steps && i<chain.count ? step_icon(chain.steps[i].type):icon_chain;
         u8g2_DrawXBMP(&m1_u8g2,5,y+1,10,10,icon);
-        m1_draw_text(&m1_u8g2,19,y+8,103,rows[i],TEXT_ALIGN_LEFT);
+        if(i==selected)m1_draw_marquee(&m1_u8g2,19,y+8,103,rows[i]);else m1_draw_text(&m1_u8g2,19,y+8,103,rows[i],TEXT_ALIGN_LEFT);
     }
     m1_draw_bottom_bar(&m1_u8g2,button_back_8x8,"Back","Select",button_ok_8x8);m1_u8g2_nextpage();
 }
 static int pick_at(const char *title,unsigned count,unsigned selected,bool steps) {
+    m1_text_reset_scroll();
     if (!count) return -1;
     if(selected>=count) selected=count-1;
     for (;;) {
         list_draw(title,selected,count,steps);int k=key();
+        if(k>=0)m1_text_reset_scroll();
         if(k==BUTTON_BACK_KP_ID) return -1;
         if(k==BUTTON_OK_KP_ID) return (int)selected;
         if(k==BUTTON_UP_KP_ID) selected=m1_ui_step(selected,count,-1,m1_ui.wrap);
@@ -213,7 +216,8 @@ static void execute(void) {
         if(result!=ACTION_OK){error("Automation stopped","Action failed / timed out");return;}
         if(step->type!=AUTO_WAIT && !wait_ms(250))break;
     }
-    error(cancelled?"Automation stopped":"Sequence sent",cancelled?"Remaining steps skipped":"Device state not verified");
+    char summary[32];snprintf(summary,sizeof(summary),"%u steps processed",chain.count);
+    error(cancelled?"Automation stopped":"Sequence sent",cancelled?"Remaining steps skipped":summary);
 }
 void automation_run(void) {
     f_mkdir("0:/IR");f_mkdir(AUTO_DIR);

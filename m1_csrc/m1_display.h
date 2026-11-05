@@ -14,6 +14,7 @@
 #define M1_DISPLAY_H_
 
 #include "m1_lcd.h"
+#include "m1_text.h"
 #include "m1_ui_theme.h"
 #include "m1_menu.h"
 
