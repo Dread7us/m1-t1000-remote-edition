@@ -463,7 +463,7 @@ static void m1_draw_bottom_bar(u8g2_t *d,const uint8_t *a,const char *b,const ch
 """+icons+'\n'+'\n'.join(pieces)+r"""
 int main(void){
  strcpy(chain.name,"Movie Night");
- for(unsigned n=0;n<=16;++n){chain.count=n;for(unsigned i=0;i<n;++i){chain.steps[i].type=i%3+1;chain.steps[i].wait_ms=60000;strcpy(chain.steps[i].label,"A deliberately long action label");}
+ for(unsigned n=0;n<=16;++n){chain.count=n;for(unsigned i=0;i<n;++i){chain.steps[i].type=i%3+1;chain.steps[i].wait_ms=60000;memset(chain.steps[i].label,'W',sizeof(chain.steps[i].label)-1);chain.steps[i].label[sizeof(chain.steps[i].label)-1]=0;}
   unsigned choices=n+(n<16);for(unsigned i=0;i<choices;++i)memset(rows[i],'W',31);
   for(unsigned selected=0;selected<choices;++selected)list_draw(chain.name,selected,choices,true);
   for(unsigned i=0;i<n;++i){progress(i,"Running",0);progress(i,"Waiting",100);progress(i,"Checking",999);}
