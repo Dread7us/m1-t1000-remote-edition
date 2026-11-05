@@ -47,6 +47,10 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ## Readable text and IR recovery
 
+**Revision 9:** the home header shows the full **T-1000** name, with balanced clock/battery/status spacing in both time formats. Built and native-tested; physical confirmation pending.
+
+<img src="documentation/remote-edition/home-header-preview.png" alt="Complete T-1000 home header in 24-hour and 12-hour modes with 100 percent battery" width="768">
+
 <img src="documentation/remote-edition/readability-preview.png" alt="Long selections scrolling and message text wrapped across readable pages" width="960">
 
 **Revision 8 · Built and native-tested; physical verification pending.** Long selections scroll, common messages wrap into pages, and **System → Read screen text** opens overflowing text from older screens. IR updates address PWM initialization, timer recovery, final-sample bounds, complete protocol frames, and Denon/Kaseikyo field conversion.

@@ -672,5 +672,54 @@ int main(void){IRMP_DATA data={0};data.protocol=1;m1_kaseikyo_decode(0x00325441,
 (out/'kaseikyo.c').write_text(golden);exe=compile('kaseikyo',[out/'kaseikyo.c']);print(run([exe]))
 
 exe=compile('long-ir',[shim/'test_long_ir.c',*common]);print(run([exe]))
+
+header_source=(src/'m1_display.c').read_text(encoding='utf-8')
+home_header=extract_body(header_source,'static void m1_gui_draw_menu_header(const char *title, uint8_t sel_item, uint8_t num_items)\n{')
+header_test=r"""#include <assert.h>
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include "m1_ui_theme.h"
+typedef int u8g2_t;
+typedef struct {unsigned battery_level;} S_M1_Power_Status_t;
+typedef struct {unsigned hour,minute;} m1_time_t;
+m1_ui_preferences_t m1_ui=M1_UI_DEFAULTS;
+static u8g2_t m1_u8g2;static unsigned menu_level_id,battery=100,hour=23;static int signal=-42,sd=0,brand_seen;
+static struct {int left,right;} spans[8];static unsigned span_count;
+static uint8_t sd_card_10x10[20];
+#define M1_LCD_DISPLAY_WIDTH 128
+#define MENU_HEADER_HEIGHT 12
+#define M1_DISP_DRAW_COLOR_BG 0
+#define M1_DISP_DRAW_COLOR_TXT 1
+#define M1_DISP_FUNC_MENU_FONT_N 0
+#define TEXT_ALIGN_LEFT 0
+#define TEXT_ALIGN_CENTER 1
+#define TEXT_ALIGN_RIGHT 2
+#define SD_access_OK 0
+static void battery_power_status_get(S_M1_Power_Status_t *p){p->battery_level=battery;}
+static void m1_get_localtime(m1_time_t *p){p->hour=hour;p->minute=59;}
+static int wifi_get_rssi(void){return signal;}
+static int m1_sdcard_get_status(void){return sd;}
+static void u8g2_SetDrawColor(u8g2_t *d,int c){(void)d;(void)c;}
+static void u8g2_SetFont(u8g2_t *d,int f){(void)d;(void)f;}
+static void bounds(int x,int y,int w,int h){assert(x>=0&&y>=0&&x+w<=128&&y+h<=64);}
+static void u8g2_DrawBox(u8g2_t *d,int x,int y,int w,int h){(void)d;bounds(x,y,w,h);}
+static void u8g2_DrawFrame(u8g2_t *d,int x,int y,int w,int h){(void)d;bounds(x,y,w,h);}
+static void u8g2_DrawHLine(u8g2_t *d,int x,int y,int w){(void)d;bounds(x,y,w,1);}
+static void u8g2_DrawXBMP(u8g2_t *d,int x,int y,int w,int h,const uint8_t *b){(void)d;(void)b;bounds(x,y,w,h);}
+static void text_span(int x,int y,int width,const char *text,int align){int w=(int)strlen(text)*5;assert(w<=width);if(align==1)x+=(width-w)/2;else if(align==2)x+=width-w;bounds(x,y-7,w,8);for(unsigned i=0;i<span_count;++i)assert(x>=spans[i].right||x+w<=spans[i].left);spans[span_count].left=x;spans[span_count++].right=x+w;}
+static void m1_draw_text(u8g2_t *d,int x,int y,int width,const char *text,int align){(void)d;text_span(x,y,width,text,align);}
+static void m1_draw_marquee(u8g2_t *d,int x,int y,int width,const char *text){(void)d;assert(!strcmp(text,"T-1000"));text_span(x,y,width,text,0);++brand_seen;}
+"""+home_header+r"""
+int main(void){unsigned cases=0;
+ for(unsigned clock=0;clock<2;++clock)for(unsigned bat=0;bat<2;++bat)for(unsigned twelve=0;twelve<2;++twelve)for(unsigned level=0;level<=100;level+=10)for(unsigned h=0;h<24;h+=11)for(unsigned radio=0;radio<2;++radio)for(unsigned card=0;card<2;++card){
+  m1_ui.clock=clock;m1_ui.battery=bat;m1_ui.clock_12h=twelve;battery=level;hour=h;signal=radio?-42:0;sd=card;
+  span_count=0;brand_seen=0;m1_gui_draw_menu_header("T-1000",0,17);assert(brand_seen==1);++cases;
+ }
+ printf("PASS: actual home header shows complete T-1000 with non-overlapping clock/battery/status text in %u setting/status combinations, including 100%% and 12h a/p\n",cases);return 0;}
+"""
+(out/'home-header.c').write_text(header_test);exe=compile('home-header',[out/'home-header.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

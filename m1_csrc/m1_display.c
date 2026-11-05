@@ -539,11 +539,23 @@ static void m1_gui_draw_menu_header(const char *title, uint8_t sel_item, uint8_t
 		snprintf(battery_status, sizeof(battery_status), "%u%%", power_status.battery_level);
 
 		m1_get_localtime(&now);
-		snprintf(time_str, sizeof(time_str), "%02u:%02u", m1_ui.clock_12h ? ((now.hour + 11) % 12 + 1) : now.hour, now.minute);
+        if(m1_ui.clock_12h)
+            snprintf(time_str,sizeof(time_str),"%02u:%02u%c",(now.hour+11)%12+1,now.minute,now.hour<12?'a':'p');
+        else snprintf(time_str,sizeof(time_str),"%02u:%02u",now.hour,now.minute);
 
-		m1_draw_text(&m1_u8g2, 3, 8, 20, title, TEXT_ALIGN_LEFT);
-		if (m1_ui.clock) m1_draw_text(&m1_u8g2, 34, 8, 36, time_str, TEXT_ALIGN_RIGHT);
-		if (m1_ui.battery) m1_draw_text(&m1_u8g2, 72, 8, 24, battery_status, TEXT_ALIGN_RIGHT);
+        /* Stable right-hand slots leave the complete product mark visible,
+         * including 12-hour time and a three-digit battery percentage. */
+        int title_right=96;
+        if(m1_ui.battery) {
+            m1_draw_text(&m1_u8g2,76,8,20,battery_status,TEXT_ALIGN_RIGHT);
+            title_right=72;
+        }
+        if(m1_ui.clock) {
+            int clock_width=m1_ui.clock_12h?30:25;
+            m1_draw_text(&m1_u8g2,title_right-clock_width,8,clock_width,time_str,TEXT_ALIGN_RIGHT);
+            title_right-=clock_width+6;
+        }
+        m1_draw_marquee(&m1_u8g2,3,8,title_right-3,title);
 
 		int rssi = wifi_get_rssi();
 		if (rssi != 0)
@@ -575,7 +587,7 @@ static void m1_gui_draw_menu_header(const char *title, uint8_t sel_item, uint8_t
 	}
 	else
 	{
-		m1_draw_text(&m1_u8g2, 3, 8, 84, title, TEXT_ALIGN_LEFT);
+		m1_draw_marquee(&m1_u8g2, 3, 8, 84, title);
 		snprintf(header_status, sizeof(header_status), "%u/%u", (unsigned)(sel_item + 1), (unsigned)num_items);
 		m1_draw_text(&m1_u8g2, 88, 8, 26, header_status, TEXT_ALIGN_RIGHT);
 

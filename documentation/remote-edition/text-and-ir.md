@@ -1,8 +1,14 @@
-# Readable text and IR recovery · revision 8
+# Readable text and IR recovery · revision 9
 
 ![Scrolling selections and wrapped message pages](readability-preview.png)
 
 Preview uses the firmware's actual scrolling/wrapping code and fonts on a desktop framebuffer. Physical readability and IR output still need review on the M1.
+
+## Home header
+
+![Actual home header with the complete product name](home-header-preview.png)
+
+Revision 9 gives the home screen's separate header a complete **T-1000** label. Stable right-aligned time/battery slots leave enough room even with 12-hour a/p time and 100% battery. The product mark fits without needing motion; a longer future title uses scrolling. Long submenu headings also scroll. The actual header is tested in 1,056 setting/status combinations for complete branding, bounds, and non-overlapping text. The preview uses the actual firmware drawing function and font, not a device photograph. Physical confirmation is pending.
 
 ## Reading long text
 
