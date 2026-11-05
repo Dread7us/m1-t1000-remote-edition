@@ -343,7 +343,7 @@ static void settings_set_time_draw(const m1_time_t *dt, uint8_t field)
 
     m1_u8g2_firstpage();
     u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
-    m1_draw_header_bar(&m1_u8g2, "Set Time", "OK=Save");
+    m1_draw_header_bar(&m1_u8g2, "Local time", "Save");
 
     /* Date line: YYYY-MM-DD */
     snprintf(line, sizeof(line), "%04u-%02u-%02u",
@@ -352,28 +352,26 @@ static void settings_set_time_draw(const m1_time_t *dt, uint8_t field)
     m1_draw_text(&m1_u8g2, 8, 28, 114, line, TEXT_ALIGN_LEFT);
 
     /* Time line: HH:MM:SS */
-    snprintf(line, sizeof(line), "%02u:%02u:%02u",
-             (unsigned)dt->hour, (unsigned)dt->minute, (unsigned)dt->second);
-    u8g2_SetFont(&m1_u8g2, M1_DISP_LARGE_FONT_2B);
+    if(m1_ui.clock_12h)
+        snprintf(line,sizeof(line),"%02u:%02u:%02u %s",(dt->hour+11)%12+1,dt->minute,dt->second,dt->hour<12?"AM":"PM");
+    else snprintf(line,sizeof(line),"%02u:%02u:%02u",dt->hour,dt->minute,dt->second);
+    u8g2_SetFont(&m1_u8g2, M1_DISP_LARGE_FONT_1B);
     m1_draw_text(&m1_u8g2, 8, 44, 114, line, TEXT_ALIGN_LEFT);
 
-    /* Cursor underline for active field:
-     * Fields 0-2 are in the date line (FUNC font ~6px wide per char)
-     * Fields 3-5 are in the time line (LARGE font ~12px wide per char) */
-    static const uint8_t date_field_x[] = { 8, 38, 56 };   /* Y M D start x */
-    static const uint8_t time_field_x[] = { 8, 44, 80 };   /* H M S start x */
-
-    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
-    if (field < 3U)
-    {
-        /* underline 2-char date segment */
-        u8g2_DrawHLine(&m1_u8g2, date_field_x[field], 30, 12);
+    /* Measure the prefix in the actual font so every field stays aligned. */
+    char prefix[32];unsigned position;
+    if(field<3) {
+        static const uint8_t positions[]={0,5,8};position=positions[field];
+        snprintf(prefix,sizeof(prefix),"%04u-%02u-%02u",dt->year,dt->month,dt->day);
+        u8g2_SetFont(&m1_u8g2,M1_DISP_FUNC_MENU_FONT_N);
+    } else {
+        static const uint8_t positions[]={0,3,6};position=positions[field-3];
+        snprintf(prefix,sizeof(prefix),"%s",line);
+        u8g2_SetFont(&m1_u8g2,M1_DISP_LARGE_FONT_1B);
     }
-    else
-    {
-        /* underline 2-char time segment */
-        u8g2_DrawHLine(&m1_u8g2, time_field_x[field - 3U], 46, 23);
-    }
+    prefix[position]=0;
+    u8g2_SetDrawColor(&m1_u8g2,M1_DISP_DRAW_COLOR_TXT);
+    u8g2_DrawHLine(&m1_u8g2,8+u8g2_GetStrWidth(&m1_u8g2,prefix),field<3?30:46,u8g2_GetStrWidth(&m1_u8g2,field==0?"0000":"00"));
 
     m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Cancel", "Field", arrowright_8x8);
     m1_u8g2_nextpage();
@@ -396,7 +394,7 @@ void settings_set_time(void)
     m1_time_t dt;
     uint8_t field = 0;   /* 0=Year 1=Month 2=Day 3=Hour 4=Min 5=Sec */
 
-    m1_get_datetime(&dt);
+    m1_get_localtime(&dt);
     /* Clamp to sane defaults if RTC is uninitialised */
     if (dt.year < 2020U || dt.year > 2099U) dt.year  = 2025U;
     if (dt.month < 1U  || dt.month > 12U)  dt.month  = 1U;
@@ -404,7 +402,7 @@ void settings_set_time(void)
     if (dt.hour  > 23U)                     dt.hour   = 0U;
     if (dt.minute > 59U)                    dt.minute = 0U;
     if (dt.second > 59U)                    dt.second = 0U;
-    dt.weekday = 1U;  /* will be ignored by RTC; just a sane value */
+    /* The save API derives weekday from the selected local date. */
 
     settings_set_time_draw(&dt, field);
 
@@ -468,7 +466,7 @@ void settings_set_time(void)
         /* OK — commit and save */
         if (this_button_status.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK)
         {
-            m1_set_datetime(&dt);
+            if(!m1_set_localtime(&dt)) {m1_message_box(&m1_u8g2,"Clock not saved","RTC write failed or","date is out of range","OK");settings_set_time_draw(&dt,field);continue;}
             m1_buzzer_notification();
             xQueueReset(main_q_hdl);
             return;

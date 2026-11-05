@@ -984,23 +984,36 @@ void HAL_Delay(uint32_t Delay)
   * @param  dt: pointer to m1_time_t struct
   */
 /*============================================================================*/
-void m1_get_datetime(m1_time_t *dt)
-{
-	RTC_TimeTypeDef sTime = {0};
-	RTC_DateTypeDef sDate = {0};
-
-	if ( HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) == HAL_OK )
-	{
-		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-		dt->hour = sTime.Hours;
-		dt->minute = sTime.Minutes;
-		dt->second = sTime.Seconds;
-		dt->day = sDate.Date;
-		dt->month = sDate.Month;
-		dt->year = 2000 + sDate.Year;
-		dt->weekday = sDate.WeekDay;
-	}
+static uint8_t clock_month_days(uint16_t year,uint8_t month) {
+    static const uint8_t days[]={31,28,31,30,31,30,31,31,30,31,30,31};
+    if(month<1 || month>12)return 0;
+    return (uint8_t)(days[month-1]+(month==2 && year%4==0 && (year%100!=0 || year%400==0)));
 }
+static bool clock_valid(const m1_time_t *dt) {
+    return dt && dt->year>=2000 && dt->year<=2100 && dt->month>=1 && dt->month<=12 &&
+        dt->day>=1 && dt->day<=clock_month_days(dt->year,dt->month) && dt->hour<24 && dt->minute<60 && dt->second<60;
+}
+static uint8_t clock_weekday(const m1_time_t *dt) {
+    unsigned days=0;
+    for(unsigned year=2000;year<dt->year;++year)days+=365+(year%4==0 && (year%100!=0 || year%400==0));
+    for(unsigned month=1;month<dt->month;++month)days+=clock_month_days(dt->year,month);
+    return (uint8_t)((days+dt->day-1+5)%7+1); /* 2000-01-01 was Saturday. */
+}
+bool m1_get_datetime_checked(m1_time_t *dt) {
+    RTC_TimeTypeDef time={0};RTC_DateTypeDef date={0};
+    if(!dt)return false;
+    memset(dt,0,sizeof(*dt));dt->year=2000;dt->month=dt->day=1;dt->weekday=6;
+    HAL_StatusTypeDef time_status=HAL_RTC_GetTime(&hrtc,&time,RTC_FORMAT_BIN);
+    /* Always read date to release the RTC shadow-register latch. */
+    HAL_StatusTypeDef date_status=HAL_RTC_GetDate(&hrtc,&date,RTC_FORMAT_BIN);
+    if(time_status!=HAL_OK || date_status!=HAL_OK)return false;
+    dt->hour=time.Hours;dt->minute=time.Minutes;dt->second=time.Seconds;
+    dt->day=date.Date;dt->month=date.Month;dt->year=2000+date.Year;dt->weekday=date.WeekDay;
+    if(!clock_valid(dt))return false;
+    dt->weekday=clock_weekday(dt);return true;
+}
+void m1_get_datetime(m1_time_t *dt) {m1_get_datetime_checked(dt);}
+
 
 /*============================================================================*/
 /**
@@ -1008,13 +1021,9 @@ void m1_get_datetime(m1_time_t *dt)
   * @param  dt: pointer to m1_time_t struct
   */
 /*============================================================================*/
-void m1_get_localtime(m1_time_t *dt)
-{
-	m1_get_datetime(dt);
-
-	if (dt == NULL || m1_tz_offset_hours == 0) return;
-
-	int16_t hour = (int16_t)dt->hour + (int16_t)m1_tz_offset_hours;
+bool m1_shift_datetime(m1_time_t *dt,int16_t offset_hours) {
+    if(!clock_valid(dt) || offset_hours < -24 || offset_hours > 24)return false;
+	int16_t hour = (int16_t)dt->hour + offset_hours;
 
 	while (hour < 0)
 	{
@@ -1052,7 +1061,19 @@ void m1_get_localtime(m1_time_t *dt)
 	}
 
 	dt->hour = (uint8_t)hour;
+    return clock_valid(dt);
 }
+bool m1_get_localtime_checked(m1_time_t *dt) {
+    return m1_get_datetime_checked(dt) && m1_shift_datetime(dt,m1_tz_offset_hours);
+}
+void m1_get_localtime(m1_time_t *dt) {m1_get_localtime_checked(dt);}
+bool m1_set_localtime(const m1_time_t *dt) {
+    if(!clock_valid(dt))return false;
+    m1_time_t utc=*dt;utc.weekday=clock_weekday(dt);
+    if(!m1_shift_datetime(&utc,-m1_tz_offset_hours))return false;
+    return m1_set_datetime_checked(&utc);
+}
+
 
 /*============================================================================*/
 /**
@@ -1060,8 +1081,9 @@ void m1_get_localtime(m1_time_t *dt)
   * @param  dt: pointer to m1_time_t struct
   */
 /*============================================================================*/
-void m1_set_datetime(const m1_time_t *dt)
+bool m1_set_datetime_checked(const m1_time_t *dt)
 {
+    if(!clock_valid(dt) || dt->year>2099)return false;
 	RTC_TimeTypeDef sTime = {0};
 	RTC_DateTypeDef sDate = {0};
 
@@ -1071,12 +1093,13 @@ void m1_set_datetime(const m1_time_t *dt)
 	sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
 	sTime.StoreOperation = RTC_STOREOPERATION_RESET;
 
-	sDate.WeekDay = dt->weekday;
+	sDate.WeekDay = clock_weekday(dt);
 	sDate.Month = dt->month;
 	sDate.Date = dt->day;
 	sDate.Year = dt->year - 2000;
 
 	HAL_PWR_EnableBkUpAccess();
-	HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-	HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+	if(HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN)!=HAL_OK)return false;
+	return HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN)==HAL_OK;
 }
+void m1_set_datetime(const m1_time_t *dt) {m1_set_datetime_checked(dt);}

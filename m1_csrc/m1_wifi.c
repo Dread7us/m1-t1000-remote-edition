@@ -2059,42 +2059,7 @@ void wifi_disconnect(void)
   * @retval timezone offset (-12..+14), or 127 on failure
   */
 /*============================================================================*/
-static int8_t wifi_auto_tz(void)
-{
-	char resp[768];
-	int8_t tz = 127;
 
-	memset(resp, 0, sizeof(resp));
-	if (spi_AT_send_recv(
-			"AT+HTTPCGET=\"http://worldtimeapi.org/api/ip\"\r\n",
-			resp, sizeof(resp) - 1, 10) != SUCCESS)
-		return tz;
-
-	char *p = strstr(resp, "\"utc_offset\"");
-	if (!p) return tz;
-
-	p = strchr(p, ':');
-	if (!p) return tz;
-
-	p = strchr(p, '"');
-	if (!p) return tz;
-
-	p++;
-	int sign = 1;
-	if (*p == '-') { sign = -1; p++; }
-	else if (*p == '+') { p++; }
-
-	if (p[0] < '0' || p[0] > '9' || p[1] < '0' || p[1] > '9')
-		return tz;
-
-	int hours = (p[0] - '0') * 10 + (p[1] - '0');
-	tz = (int8_t)(sign * hours);
-
-	if (tz < -12 || tz > 14)
-		tz = 127;
-
-	return tz;
-}
 
 /*============================================================================*/
 /**
@@ -2115,9 +2080,7 @@ uint8_t wifi_sync_rtc(void)
 
 	if ( !wifi_ensure_esp32_ready() ) return 0;
 
-	int8_t auto_tz = wifi_auto_tz();
-	if (auto_tz >= -12 && auto_tz <= 14)
-		m1_tz_offset_hours = auto_tz;
+	/* SNTP updates UTC; retain the user-selected display offset. */
 
 	spi_AT_send_recv("AT+CIPSNTPCFG=1,0,\"pool.ntp.org\"\r\n", resp, sizeof(resp), 2);
 
@@ -2159,8 +2122,7 @@ uint8_t wifi_sync_rtc(void)
 				}
 
 				if (dt.month > 0 && dt.weekday > 0) {
-					m1_set_datetime(&dt);
-					return 1;
+					return m1_set_datetime_checked(&dt) ? 1 : 0;
 				}
 			}
 		}
@@ -2185,7 +2147,7 @@ void wifi_sync_rtc_tool(void)
 
 	if ( wifi_sync_rtc() )
 	{
-		settings_save_to_sd();  /* persist auto-detected TZ offset */
+		settings_save_to_sd();  /* persist configured display offset */
 		wifi_display_msg("RTC synced", "via WiFi");
 	}
 	else

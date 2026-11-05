@@ -538,8 +538,9 @@ static void m1_gui_draw_menu_header(const char *title, uint8_t sel_item, uint8_t
 		battery_power_status_get(&power_status);
 		snprintf(battery_status, sizeof(battery_status), "%u%%", power_status.battery_level);
 
-		m1_get_localtime(&now);
-        if(m1_ui.clock_12h)
+		bool clock_ok=m1_get_localtime_checked(&now);
+        if(!clock_ok)snprintf(time_str,sizeof(time_str),"--:--");
+        else if(m1_ui.clock_12h)
             snprintf(time_str,sizeof(time_str),"%02u:%02u%c",(now.hour+11)%12+1,now.minute,now.hour<12?'a':'p');
         else snprintf(time_str,sizeof(time_str),"%02u:%02u",now.hour,now.minute);
 
@@ -981,8 +982,9 @@ void m1_draw_header_bar(u8g2_t *u8g2, const char *title, const char *badge)
     char clock_text[9];
     if (badge == NULL && m1_ui.clock) {
         m1_time_t now;
-        m1_get_localtime(&now);
-        if (m1_ui.clock_12h)
+        bool clock_ok=m1_get_localtime_checked(&now);
+        if(!clock_ok)snprintf(clock_text,sizeof(clock_text),"--:--");
+        else if (m1_ui.clock_12h)
             snprintf(clock_text, sizeof(clock_text), "%u:%02u%c", (now.hour + 11) % 12 + 1, now.minute, now.hour < 12 ? 'a' : 'p');
         else snprintf(clock_text, sizeof(clock_text), "%02u:%02u", now.hour, now.minute);
         badge = clock_text;

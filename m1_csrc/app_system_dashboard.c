@@ -146,7 +146,7 @@ static void dashboard_draw_page(dashboard_page_t page)
     const char *usb_link;
 
     battery_power_status_get(&pwr);
-    m1_get_localtime(&now);
+    bool clock_ok=m1_get_localtime_checked(&now);
     sd_status = m1_sdcard_get_status();
     sd_info = (sd_status == SD_access_OK) ? m1_sdcard_get_info() : NULL;
 
@@ -171,7 +171,8 @@ static void dashboard_draw_page(dashboard_page_t page)
     {
         char uptime[20];
         dashboard_format_uptime(HAL_GetTick(), uptime, sizeof(uptime));
-        snprintf(line1, sizeof(line1), "%02u:%02u:%02u  %02u/%02u/%02u",
+        if(!clock_ok)snprintf(line1,sizeof(line1),"RTC unavailable");
+        else snprintf(line1, sizeof(line1), "%02u:%02u:%02u  %02u/%02u/%02u",
                  now.hour, now.minute, now.second,
                  now.month, now.day, now.year % 100U);
         snprintf(line2, sizeof(line2), "Battery %u%%  %uC",

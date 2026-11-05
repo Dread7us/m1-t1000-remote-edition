@@ -191,12 +191,12 @@ static void clock_draw_page(uint8_t page)
     m1_time_t zone_time;
     char badge[8];
     char date_line[24];
-    char time_line[12];
+    char time_line[16];
     const clock_offset_t *offset = NULL;
     const char *weekday = clock_weekdays[1];
     const char *title = "Local clock";
 
-    m1_get_localtime(&now);
+    bool clock_ok=m1_get_localtime_checked(&now);
 
     snprintf(badge, sizeof(badge), "%u/%u", (unsigned)(page + 1U), (unsigned)CLOCK_PAGE_COUNT);
     if (page == 0U)
@@ -214,15 +214,18 @@ static void clock_draw_page(uint8_t page)
     {
         weekday = clock_weekdays[zone_time.weekday];
     }
-    snprintf(time_line, sizeof(time_line), "%02u:%02u:%02u", zone_time.hour, zone_time.minute, zone_time.second);
+    if(!clock_ok)snprintf(time_line,sizeof(time_line),"--:--");
+    else if(m1_ui.clock_12h)snprintf(time_line,sizeof(time_line),"%02u:%02u:%02u %s",(zone_time.hour+11)%12+1,zone_time.minute,zone_time.second,zone_time.hour<12?"AM":"PM");
+    else snprintf(time_line,sizeof(time_line),"%02u:%02u:%02u",zone_time.hour,zone_time.minute,zone_time.second);
     snprintf(date_line, sizeof(date_line), "%s %02u/%02u/%04u", weekday, zone_time.month, zone_time.day, zone_time.year);
+    if(!clock_ok)snprintf(date_line,sizeof(date_line),"RTC unavailable");
 
     m1_u8g2_firstpage();
     m1_draw_header_bar(&m1_u8g2, "Clock", badge);
     m1_draw_content_frame(&m1_u8g2, 2, 14, 124, 37);
     u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
     m1_draw_text(&m1_u8g2, 8, 22, 114, date_line, TEXT_ALIGN_LEFT);
-    u8g2_SetFont(&m1_u8g2, M1_DISP_LARGE_FONT_2B);
+    u8g2_SetFont(&m1_u8g2, M1_DISP_LARGE_FONT_1B);
     m1_draw_text(&m1_u8g2, 10, 40, 108, time_line, TEXT_ALIGN_CENTER);
     u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
     m1_draw_text(&m1_u8g2, 8, 50, 114, title, TEXT_ALIGN_LEFT);

@@ -685,7 +685,7 @@ typedef int u8g2_t;
 typedef struct {unsigned battery_level;} S_M1_Power_Status_t;
 typedef struct {unsigned hour,minute;} m1_time_t;
 m1_ui_preferences_t m1_ui=M1_UI_DEFAULTS;
-static u8g2_t m1_u8g2;static unsigned menu_level_id,battery=100,hour=23;static int signal=-42,sd=0,brand_seen;
+static u8g2_t m1_u8g2;static unsigned menu_level_id,battery=100,hour=23,minute=59;static int signal=-42,sd=0,brand_seen;static bool rtc_ok=true;static char shown_clock[16];
 static struct {int left,right;} spans[8];static unsigned span_count;
 static uint8_t sd_card_10x10[20];
 #define M1_LCD_DISPLAY_WIDTH 128
@@ -698,7 +698,7 @@ static uint8_t sd_card_10x10[20];
 #define TEXT_ALIGN_RIGHT 2
 #define SD_access_OK 0
 static void battery_power_status_get(S_M1_Power_Status_t *p){p->battery_level=battery;}
-static void m1_get_localtime(m1_time_t *p){p->hour=hour;p->minute=59;}
+static bool m1_get_localtime_checked(m1_time_t *p){p->hour=hour;p->minute=minute;return rtc_ok;}
 static int wifi_get_rssi(void){return signal;}
 static int m1_sdcard_get_status(void){return sd;}
 static void u8g2_SetDrawColor(u8g2_t *d,int c){(void)d;(void)c;}
@@ -709,7 +709,7 @@ static void u8g2_DrawFrame(u8g2_t *d,int x,int y,int w,int h){(void)d;bounds(x,y
 static void u8g2_DrawHLine(u8g2_t *d,int x,int y,int w){(void)d;bounds(x,y,w,1);}
 static void u8g2_DrawXBMP(u8g2_t *d,int x,int y,int w,int h,const uint8_t *b){(void)d;(void)b;bounds(x,y,w,h);}
 static void text_span(int x,int y,int width,const char *text,int align){int w=(int)strlen(text)*5;assert(w<=width);if(align==1)x+=(width-w)/2;else if(align==2)x+=width-w;bounds(x,y-7,w,8);for(unsigned i=0;i<span_count;++i)assert(x>=spans[i].right||x+w<=spans[i].left);spans[span_count].left=x;spans[span_count++].right=x+w;}
-static void m1_draw_text(u8g2_t *d,int x,int y,int width,const char *text,int align){(void)d;text_span(x,y,width,text,align);}
+static void m1_draw_text(u8g2_t *d,int x,int y,int width,const char *text,int align){(void)d;if(strchr(text,':'))snprintf(shown_clock,sizeof(shown_clock),"%s",text);text_span(x,y,width,text,align);}
 static void m1_draw_marquee(u8g2_t *d,int x,int y,int width,const char *text){(void)d;assert(!strcmp(text,"T-1000"));text_span(x,y,width,text,0);++brand_seen;}
 """+home_header+r"""
 int main(void){unsigned cases=0;
@@ -717,9 +717,100 @@ int main(void){unsigned cases=0;
   m1_ui.clock=clock;m1_ui.battery=bat;m1_ui.clock_12h=twelve;battery=level;hour=h;signal=radio?-42:0;sd=card;
   span_count=0;brand_seen=0;m1_gui_draw_menu_header("T-1000",0,17);assert(brand_seen==1);++cases;
  }
- printf("PASS: actual home header shows complete T-1000 with non-overlapping clock/battery/status text in %u setting/status combinations, including 100%% and 12h a/p\n",cases);return 0;}
+ m1_ui.clock=1;m1_ui.clock_12h=1;hour=13;minute=1;span_count=0;m1_gui_draw_menu_header("T-1000",0,17);assert(!strcmp(shown_clock,"01:01p"));
+ hour=0;minute=0;span_count=0;m1_gui_draw_menu_header("T-1000",0,17);assert(!strcmp(shown_clock,"12:00a"));
+ hour=12;span_count=0;m1_gui_draw_menu_header("T-1000",0,17);assert(!strcmp(shown_clock,"12:00p"));
+ rtc_ok=false;span_count=0;m1_gui_draw_menu_header("T-1000",0,17);assert(!strcmp(shown_clock,"--:--"));
+ printf("PASS: actual home header shows complete T-1000 with non-overlapping clock/battery/status text in %u setting/status combinations; exact 13:01, noon, midnight and RTC failure display\n",cases);return 0;}
 """
 (out/'home-header.c').write_text(header_test);exe=compile('home-header',[out/'home-header.c']);print(run([exe]))
+
+
+clock=(src/'m1_system.c').read_text(encoding='utf-8')
+clock_functions='\n'.join(extract_body(clock,signature) for signature in [
+ 'static uint8_t clock_month_days(', 'static bool clock_valid(', 'static uint8_t clock_weekday(',
+ 'bool m1_get_datetime_checked(', 'bool m1_shift_datetime(', 'bool m1_get_localtime_checked(',
+ 'bool m1_set_localtime(', 'bool m1_set_datetime_checked('])
+rtc=r"""#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+typedef struct {uint16_t year;uint8_t month,day,hour,minute,second,weekday;} m1_time_t;
+typedef struct {uint8_t Hours,Minutes,Seconds,DayLightSaving,StoreOperation;} RTC_TimeTypeDef;
+typedef struct {uint8_t WeekDay,Month,Date,Year;} RTC_DateTypeDef;
+typedef int HAL_StatusTypeDef;
+static int hrtc,read_time_error,read_date_error,write_time_error,write_date_error,date_reads;
+static int8_t m1_tz_offset_hours;
+static RTC_TimeTypeDef saved_time;static RTC_DateTypeDef saved_date;
+#define HAL_OK 0
+#define RTC_FORMAT_BIN 0
+#define RTC_DAYLIGHTSAVING_NONE 0
+#define RTC_STOREOPERATION_RESET 0
+static int HAL_RTC_GetTime(int *h,RTC_TimeTypeDef *t,int format){(void)h;(void)format;*t=saved_time;return read_time_error;}
+static int HAL_RTC_GetDate(int *h,RTC_DateTypeDef *d,int format){(void)h;(void)format;*d=saved_date;++date_reads;return read_date_error;}
+static int HAL_RTC_SetTime(int *h,RTC_TimeTypeDef *t,int format){(void)h;(void)format;if(!write_time_error)saved_time=*t;return write_time_error;}
+static int HAL_RTC_SetDate(int *h,RTC_DateTypeDef *d,int format){(void)h;(void)format;if(!write_date_error)saved_date=*d;return write_date_error;}
+static void HAL_PWR_EnableBkUpAccess(void){}
+bool m1_set_datetime_checked(const m1_time_t *dt);
+"""+clock_functions+r"""
+static bool same(const m1_time_t *a,const m1_time_t *b){return a->year==b->year&&a->month==b->month&&a->day==b->day&&a->hour==b->hour&&a->minute==b->minute&&a->second==b->second;}
+int main(void){
+ m1_time_t local={2026,11,5,13,1,0,4},shown;
+ for(int offset=-12;offset<=14;++offset){m1_tz_offset_hours=offset;assert(m1_set_localtime(&local));assert(m1_get_localtime_checked(&shown));assert(same(&local,&shown));assert(shown.weekday==4);}
+ m1_tz_offset_hours=-8;assert(m1_set_localtime(&local));assert(saved_time.Hours==21&&saved_time.Minutes==1);assert(m1_get_localtime_checked(&shown)&&shown.hour==13&&shown.minute==1);
+ m1_time_t dates[]={{2024,3,1,0,5,2,5},{2026,1,1,0,0,0,4},{2026,12,31,23,59,59,4},{2000,3,1,0,0,0,3},{2099,12,30,23,59,59,3}};
+ unsigned cases=0;for(unsigned i=0;i<sizeof(dates)/sizeof(dates[0]);++i)for(int offset=-12;offset<=14;++offset){local=dates[i];m1_tz_offset_hours=offset;assert(m1_set_localtime(&local));assert(m1_get_localtime_checked(&shown));assert(same(&local,&shown));++cases;}
+ local=(m1_time_t){2024,3,1,0,0,0,5};assert(m1_shift_datetime(&local,-1)&&local.month==2&&local.day==29&&local.hour==23);
+ local=(m1_time_t){2026,1,1,0,0,0,4};assert(m1_shift_datetime(&local,-1)&&local.year==2025&&local.month==12&&local.day==31&&local.weekday==3);
+ local=(m1_time_t){2026,11,5,13,1,0,4};assert(m1_set_datetime_checked(&local));
+ read_time_error=1;date_reads=0;memset(&shown,0xa5,sizeof(shown));assert(!m1_get_localtime_checked(&shown)&&date_reads==1&&shown.year==2000);read_time_error=0;
+ read_date_error=1;assert(!m1_get_localtime_checked(&shown));read_date_error=0;
+ saved_date.Month=0;assert(!m1_get_localtime_checked(&shown));assert(!m1_get_localtime_checked(NULL));
+ write_time_error=1;assert(!m1_set_localtime(&local));write_time_error=0;write_date_error=1;assert(!m1_set_localtime(&local));write_date_error=0;
+ local.month=13;assert(!m1_set_localtime(&local));assert(!m1_set_datetime_checked(NULL));
+ printf("PASS: actual local/UTC RTC APIs roundtrip 13:01 across all offsets and %u boundary cases; leap days, weekdays, failed reads/writes and invalid data are checked\n",cases);
+ return 0;
+}
+"""
+(out/'local-clock.c').write_text(rtc);exe=compile('local-clock',[out/'local-clock.c']);print(run([exe]))
+
+# Exercise the exact Set Time workflow with mocked keys, not only conversion helpers.
+settings=(src/'m1_settings.c').read_text()
+workflow=extract_body(settings,'void settings_set_time(void)\n{')
+workflow_test=r"""#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+typedef struct {uint16_t year;uint8_t month,day,hour,minute,second,weekday;} m1_time_t;
+typedef int BaseType_t;
+typedef struct {int q_evt_type;} S_M1_Main_Q_t;
+typedef struct {int event[7];} S_M1_Buttons_Status;
+#define pdTRUE 1
+#define portMAX_DELAY 999
+#define Q_EVENT_KEYPAD 1
+#define BUTTON_EVENT_CLICK 1
+#define BUTTON_BACK_KP_ID 0
+#define BUTTON_OK_KP_ID 1
+#define BUTTON_UP_KP_ID 2
+#define BUTTON_DOWN_KP_ID 3
+#define BUTTON_LEFT_KP_ID 4
+#define BUTTON_RIGHT_KP_ID 5
+static int main_q_hdl,button_events_q_hdl=1,m1_u8g2,read_local,wrote_local,fail_write,keys;
+static m1_time_t local={2026,11,5,13,1,0,4};
+static void m1_get_localtime(m1_time_t *d){*d=local;++read_local;}
+static bool m1_set_localtime(const m1_time_t *d){assert(d->hour==13&&d->minute==1);++wrote_local;return !fail_write;}
+static void settings_set_time_draw(const m1_time_t *d,unsigned f){(void)f;assert(d->hour==13);}
+static unsigned settings_dim(unsigned y,unsigned m){(void)y;(void)m;return 30;}
+static void m1_message_box(int *d,const char *a,const char *b,const char *c,const char *e){(void)d;(void)a;(void)b;(void)c;(void)e;fail_write=0;}
+static void m1_buzzer_notification(void){}
+static void xQueueReset(int q){(void)q;}
+static int xQueueReceive(int q,void *p,unsigned timeout){(void)timeout;if(q){S_M1_Buttons_Status *b=p;memset(b,0,sizeof(*b));b->event[keys++?BUTTON_BACK_KP_ID:BUTTON_OK_KP_ID]=1;}else ((S_M1_Main_Q_t *)p)->q_evt_type=1;return 1;}
+"""+workflow+r"""
+int main(void){settings_set_time();assert(read_local==1&&wrote_local==1);keys=0;fail_write=1;settings_set_time();assert(read_local==2&&wrote_local==2);puts("PASS: actual Set Time editor reads/saves local time and handles a failed save without claiming success");return 0;}
+"""
+(out/'clock-editor.c').write_text(workflow_test);exe=compile('clock-editor',[out/'clock-editor.c']);print(run([exe]))
 
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

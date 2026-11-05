@@ -206,6 +206,12 @@ typedef struct {
     uint8_t  weekday; /* 1..7 (Monday=1) */
 } m1_time_t;
 
+/* RTC is UTC; local editing/display apply the configured offset once. */
+bool m1_get_datetime_checked(m1_time_t *dt);
+bool m1_get_localtime_checked(m1_time_t *dt);
+bool m1_set_datetime_checked(const m1_time_t *dt);
+bool m1_set_localtime(const m1_time_t *dt);
+bool m1_shift_datetime(m1_time_t *dt, int16_t offset_hours);
 void m1_get_datetime(m1_time_t *dt);
 void m1_get_localtime(m1_time_t *dt);
 void m1_set_datetime(const m1_time_t *dt);

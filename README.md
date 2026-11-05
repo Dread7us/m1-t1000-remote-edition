@@ -45,9 +45,13 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Clock consistency
+
+**Revision 10:** Set Time and the home screen use the same local time, with consistent 12-hour AM/PM display. RTC failures are checked, and Wi-Fi sync preserves the configured UTC offset. [One-time setup after updating and validation](documentation/remote-edition/clock.md).
+
 ## Readable text and IR recovery
 
-**Revision 9:** the home header shows the full **T-1000** name, with balanced clock/battery/status spacing in both time formats. Built and native-tested; physical confirmation pending.
+**Revision 9:** the home header shows the full **T-1000** name, with balanced clock/battery/status spacing in both time formats. Confirmed on the physical M1.
 
 <img src="documentation/remote-edition/home-header-preview.png" alt="Complete T-1000 home header in 24-hour and 12-hour modes with 100 percent battery" width="768">
 
