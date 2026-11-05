@@ -179,5 +179,105 @@ int main(void) {
 '''
 (out/'splash.c').write_text(splash)
 exe=compile('splash',[out/'splash.c']);print(run([exe]))
+
+# Run the actual appearance load/save code over the host filesystem.
+settings=(src/'m1_settings.c').read_text()
+begin=settings.index('#define APPEARANCE_PATH')
+end=settings.index('void settings_appearance(void)',begin)
+appearance=r"""#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include "ff.h"
+#include "m1_ui_theme.h"
+m1_ui_preferences_t m1_ui=M1_UI_DEFAULTS;
+static int failures, fail_write, fail_rename;
+static int m1_u8g2;
+static void m1_message_box(void *d,const char *a,const char *b,const char *c,const char *e) {(void)d;(void)a;(void)b;(void)c;(void)e;++failures;}
+static FRESULT f_mkdir(const char *p) {(void)p;return FR_OK;}
+static FRESULT f_read(FIL *f,void *b,UINT n,UINT *read) {*read=(UINT)fread(b,1,n,f->fp);return FR_OK;}
+static FRESULT f_write(FIL *f,const void *b,UINT n,UINT *written) {*written=fail_write ? 0:(UINT)fwrite(b,1,n,f->fp);return fail_write ? FR_DISK_ERR:FR_OK;}
+static FRESULT real_rename(const char *a,const char *b) {return f_rename(a,b);}
+static FRESULT test_rename(const char *a,const char *b) {if(fail_rename && strstr(a,".tmp"))return FR_DISK_ERR;return real_rename(a,b);}
+#define f_rename test_rename
+"""+settings[begin:end]+r"""
+int main(void) {
+ for(int count=1;count<=24;++count)for(int v=0;v<count;++v) {
+  assert(m1_ui_step(v,count,-1,0)==(v?v-1:0));
+  assert(m1_ui_step(v,count,1,0)==(v+1<count?v+1:v));
+  assert(m1_ui_step(v,count,-1,1)==(v?v-1:count-1));
+  assert(m1_ui_step(v,count,1,1)==(v+1)%count);
+ }
+ appearance_save();assert(!failures);
+ m1_ui.style=2;m1_ui.outline=1;m1_ui.clock=0;m1_ui.wrap=0;appearance_save();assert(!failures);
+ m1_ui_preferences_t expected=m1_ui,defaults=M1_UI_DEFAULTS;
+ m1_ui=defaults;appearance_load();assert(!memcmp(&m1_ui,&expected,sizeof(expected)));
+ fail_write=1;m1_ui.style=0;appearance_save();assert(failures==1);
+ m1_ui=defaults;appearance_load();assert(!memcmp(&m1_ui,&expected,sizeof(expected)));
+ fail_write=0;fail_rename=1;m1_ui.style=0;appearance_save();assert(failures==2);
+ m1_ui=defaults;appearance_load();assert(!memcmp(&m1_ui,&expected,sizeof(expected)));
+ fail_rename=0;
+ FILE *f=fopen("System/appearance.cfg","wb");assert(f);fputs("version=1\np0=9\np1=-1\np2=99\np6=",f);fclose(f);
+ m1_ui=defaults;appearance_load();assert(!memcmp(&m1_ui,&defaults,sizeof(defaults)));
+ f=fopen("System/appearance.cfg","wb");assert(f);fputs("version=2\np0=2\n",f);fclose(f);
+ m1_ui=defaults;appearance_load();assert(!memcmp(&m1_ui,&defaults,sizeof(defaults)));
+ puts("PASS: appearance persistence, malformed values, version rejection, short-write and replacement-failure rollback; wrap and bounded navigation");
+ return 0;
+}
+"""
+(out/'System').mkdir(exist_ok=True)
+(out/'appearance.c').write_text(appearance)
+exe=compile('appearance',[out/'appearance.c',shim/'ff_shim.c']);print(run([exe]))
+
+
+# Check the actual shared drawing primitives against constrained font metrics.
+display=(src/'m1_display.c').read_text(encoding='utf-8')
+functions=[]
+for name in ['m1_draw_text','m1_ui_selection','m1_draw_content_frame']:
+ match=re.search(r'\nvoid '+name+r'\([^;]*?\)\n\{',display);assert match,name
+ start=match.start()+1;end=match.end();depth=1
+ while depth:
+  if display[end]=='{':depth+=1
+  if display[end]=='}':depth-=1
+  end+=1
+ functions.append(display[start:end])
+harness=r"""#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <assert.h>
+#include "m1_ui_theme.h"
+typedef int u8g2_t;typedef int u8g2_uint_t;
+typedef enum {TEXT_ALIGN_LEFT,TEXT_ALIGN_CENTER,TEXT_ALIGN_RIGHT} S_M1_text_align_t;
+m1_ui_preferences_t m1_ui=M1_UI_DEFAULTS;
+static int color=1,left,right,calls;
+static unsigned u8g2_GetStrWidth(u8g2_t *d,const char *s){(void)d;return (unsigned)strlen(s)*5;}
+static void u8g2_DrawStr(u8g2_t *d,int x,int y,const char *s){(void)d;(void)y;assert(x>=left && x+(int)strlen(s)*5<=right);++calls;}
+static void u8g2_SetDrawColor(u8g2_t *d,int c){(void)d;color=c;}
+static void bounds(int x,int y,int w,int h){assert(x>=0&&y>=0&&x+w<=128&&y+h<=64);}
+static void u8g2_DrawBox(u8g2_t *d,int x,int y,int w,int h){(void)d;bounds(x,y,w,h);}
+static void u8g2_DrawFrame(u8g2_t *d,int x,int y,int w,int h){(void)d;bounds(x,y,w,h);}
+static void u8g2_DrawRBox(u8g2_t *d,int x,int y,int w,int h,int r){(void)r;u8g2_DrawBox(d,x,y,w,h);}
+static void u8g2_DrawRFrame(u8g2_t *d,int x,int y,int w,int h,int r){(void)r;u8g2_DrawFrame(d,x,y,w,h);}
+static void u8g2_DrawVLine(u8g2_t *d,int x,int y,int h){(void)d;bounds(x,y,1,h);}
+"""+'\n'.join(functions)+r"""
+int main(void){
+ u8g2_t screen=0;char long_label[300];memset(long_label,'W',sizeof(long_label)-1);long_label[sizeof(long_label)-1]=0;
+ for(int width=0;width<=124;++width)for(int align=0;align<3;++align){
+  left=2;right=2+width;m1_draw_text(&screen,left,30,width,long_label,align);
+  m1_draw_text(&screen,left,30,width,"OK",align);m1_draw_text(&screen,left,30,width,NULL,align);
+ }
+ for(int style=0;style<3;++style)for(int outline=0;outline<2;++outline){
+  m1_ui.style=style;m1_ui.outline=outline;
+  m1_ui_selection(&screen,2,15,124,11,true);assert(color==(outline?1:0));
+  m1_ui_selection(&screen,2,27,124,11,false);assert(color==1);
+  m1_draw_content_frame(&screen,2,14,124,35);
+ }
+ assert(calls>0);puts("PASS: actual theme primitives and long-label ellipsis stay in bounds at every width/alignment and all six styles");return 0;
+}
+"""
+(out/'ui-render.c').write_text(harness)
+exe=compile('ui-render',[out/'ui-render.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

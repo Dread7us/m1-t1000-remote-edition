@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdbool.h>
 //#include "stm32h5xx_hal.h"
 //#include "main.h"
@@ -467,13 +468,12 @@ uint8_t m1_gui_submenu_update(const char *phmenu[], uint8_t num_items, uint8_t s
 
 		if ( run==active_item )
 		{
-			u8g2_DrawBox(&m1_u8g2, row_box_x, row_box_y, row_box_w, row_h);
-			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+			m1_ui_selection(&m1_u8g2, row_box_x, row_box_y, row_box_w, row_h, true);
 			u8g2_SetFont(&m1_u8g2, menu_text_font_b[menu_level_id]);
 		}
 		else
 		{
-			u8g2_DrawFrame(&m1_u8g2, row_box_x, row_box_y, row_box_w, row_h);
+			m1_ui_selection(&m1_u8g2, row_box_x, row_box_y, row_box_w, row_h, false);
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 			u8g2_SetFont(&m1_u8g2, menu_text_font_n[menu_level_id]);
 		} // if ( run==active_item )
@@ -488,7 +488,7 @@ uint8_t m1_gui_submenu_update(const char *phmenu[], uint8_t num_items, uint8_t s
 			}
 		}
 
-		u8g2_DrawStr(&m1_u8g2, row_text_x, row_text_y, phmenu[run - 1]);
+		m1_draw_text(&m1_u8g2, row_text_x, row_text_y, row_box_x + row_box_w - row_text_x - 3, phmenu[run - 1], TEXT_ALIGN_LEFT);
 		u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 	} // for (run=disp_window_top_row; run<=disp_window_bottom_row; run++)
 
@@ -538,11 +538,11 @@ static void m1_gui_draw_menu_header(const char *title, uint8_t sel_item, uint8_t
 		snprintf(battery_status, sizeof(battery_status), "%u%%", power_status.battery_level);
 
 		m1_get_localtime(&now);
-		snprintf(time_str, sizeof(time_str), "%02u:%02u", now.hour, now.minute);
+		snprintf(time_str, sizeof(time_str), "%02u:%02u", m1_ui.clock_12h ? ((now.hour + 11) % 12 + 1) : now.hour, now.minute);
 
 		m1_draw_text(&m1_u8g2, 3, 8, 20, title, TEXT_ALIGN_LEFT);
-		m1_draw_text(&m1_u8g2, 40, 8, 30, time_str, TEXT_ALIGN_RIGHT);
-		m1_draw_text(&m1_u8g2, 72, 8, 24, battery_status, TEXT_ALIGN_RIGHT);
+		if (m1_ui.clock) m1_draw_text(&m1_u8g2, 34, 8, 36, time_str, TEXT_ALIGN_RIGHT);
+		if (m1_ui.battery) m1_draw_text(&m1_u8g2, 72, 8, 24, battery_status, TEXT_ALIGN_RIGHT);
 
 		int rssi = wifi_get_rssi();
 		if (rssi != 0)
@@ -665,6 +665,7 @@ void m1_main_menu_logo_anim_reset(void)
 
 uint32_t m1_main_menu_logo_anim_next_delay_ms(void)
 {
+    if (!m1_ui.animations) return 1000;
 	switch (s_main_logo_phase)
 	{
 	case LOGO_PH_BOUNCE:          return MAIN_MENU_LOGO_BOUNCE_MS;
@@ -684,6 +685,7 @@ static int8_t logo_ease_to_zero(int8_t from, uint8_t f, uint8_t total)
 /* Advance one frame of the animation; returns true (a redraw is wanted). */
 bool m1_main_menu_logo_anim_tick(void)
 {
+    if (!m1_ui.animations) return false;
 	switch (s_main_logo_phase)
 	{
 	case LOGO_PH_RETURN:                      /* slide in from off-screen */
@@ -771,8 +773,8 @@ static void m1_gui_draw_main_menu_panel(void)
 {
 	u8g2_DrawFrame(&m1_u8g2, MENU_MAIN_PANEL_X, MENU_MAIN_PANEL_Y, MENU_MAIN_PANEL_W, MENU_MAIN_PANEL_H);
 	u8g2_DrawFrame(&m1_u8g2, MENU_MAIN_PANEL_X + 1, MENU_MAIN_PANEL_Y + 1, MENU_MAIN_PANEL_W - 2, MENU_MAIN_PANEL_H - 2);
-	u8g2_DrawXBMP(&m1_u8g2, MAIN_MENU_LOGO_REST_X + s_main_logo_dx,
-	              MAIN_MENU_LOGO_REST_Y + s_main_logo_dy, 40, 32, m1_logo_40x32);
+	u8g2_DrawXBMP(&m1_u8g2, MAIN_MENU_LOGO_REST_X + (m1_ui.animations ? s_main_logo_dx : 0),
+	              MAIN_MENU_LOGO_REST_Y + (m1_ui.animations ? s_main_logo_dy : 0), 40, 32, m1_logo_40x32);
 	u8g2_DrawHLine(&m1_u8g2, 6, 52, 30);
 	u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
 	m1_draw_text(&m1_u8g2, 0, 59, MENU_MAIN_PANEL_W, "M1", TEXT_ALIGN_CENTER);
@@ -896,7 +898,11 @@ void m1_info_box_display_draw(uint8_t box_row, const uint8_t *ptext)
 uint8_t m1_message_box(u8g2_t *u8g2, const char *title1, const char *title2, const char *title3, const char *buttons)
 {
 
-  u8g2_UserInterfaceMessage(u8g2, title1, title2, title3, buttons);
+  (void)buttons;
+  m1_u8g2_firstpage();
+  m1_draw_status_panel(u8g2, title1, NULL, NULL, 0, 0, title2, title3, NULL);
+  m1_draw_bottom_bar(u8g2, button_back_8x8, "Back", "OK", button_ok_8x8);
+  m1_u8g2_nextpage();
 
   for(;;)
   {
@@ -912,10 +918,8 @@ uint8_t m1_message_box(u8g2_t *u8g2, const char *title1, const char *title2, con
 				// Notification is only sent to this task when there's any button activity,
 				// so it doesn't need to wait when reading the event from the queue
 				ret = xQueueReceive(button_events_q_hdl, &this_button_status, 0);
-				if ( this_button_status.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK
-			  || this_button_status.event[BUTTON_LEFT_KP_ID]==BUTTON_EVENT_CLICK
-			  || this_button_status.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK
-			  || this_button_status.event[BUTTON_RIGHT_KP_ID]==BUTTON_EVENT_CLICK ) // user wants to exit?
+                if (ret == pdTRUE && (this_button_status.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK
+                  || this_button_status.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK))
 				{
 					; // Do extra tasks here if needed
 
@@ -948,34 +952,33 @@ uint8_t m1_message_box_choice(u8g2_t *u8g2, const char *title1, const char *titl
     for (;;) {
         u8g2_FirstPage(u8g2);
         do {
-            u8g2_SetFont(u8g2, u8g2_font_6x10_tr);
-            uint8_t line_height = u8g2_GetAscent(u8g2) - u8g2_GetDescent(u8g2);
-            uint8_t y = 15;
-            
-            if (title1) { u8g2_DrawStr(u8g2, 2, y, title1); y += line_height; }
-            if (title2) { u8g2_DrawStr(u8g2, 2, y, title2); y += line_height; }
-            if (title3) { u8g2_DrawStr(u8g2, 2, y, title3); y += line_height; }
-            
-            // Draw buttons at the bottom
-            for (uint8_t i = 0; i < button_cnt; i++) {
-                const char *btn_text = u8x8_GetStringLineStart(i, buttons);
-                uint8_t btn_w = u8g2_GetStrWidth(u8g2, btn_text) + 4;
-                uint8_t btn_x = (128 / (button_cnt + 1)) * (i + 1) - (btn_w / 2);
-                
-                if (i == cursor) {
-                    u8g2_DrawBox(u8g2, btn_x - 2, 50, btn_w, 12);
-                    u8g2_SetDrawColor(u8g2, 0);
-                }
-                u8g2_DrawStr(u8g2, btn_x, 60, btn_text);
-                u8g2_SetDrawColor(u8g2, 1);
+            u8g2_SetDrawColor(u8g2, 1);
+            m1_draw_header_bar(u8g2, title1, NULL);
+            m1_draw_content_frame(u8g2, 2, 14, 124, 33);
+            u8g2_SetFont(u8g2, M1_DISP_FUNC_MENU_FONT_N);
+            m1_draw_text(u8g2, 6, 27, 116, title2, TEXT_ALIGN_LEFT);
+            m1_draw_text(u8g2, 6, 39, 116, title3, TEXT_ALIGN_LEFT);
+            /* Each label ends at its newline; never draw the next label too. */
+            uint8_t first = cursor >= 2 ? cursor - 1 : 0;
+            uint8_t shown = button_cnt < 3 ? button_cnt : 3;
+            if (first + shown > button_cnt) first = button_cnt - shown;
+            for (uint8_t i=first; i<first+shown; ++i) {
+                const char *label=u8x8_GetStringLineStart(i, buttons);
+                char text[32]; size_t n=0;
+                while (label[n] && label[n]!='\n' && n<sizeof(text)-1) {text[n]=label[n]; ++n;}
+                text[n]=0;
+                int width=124/shown, x=2+(i-first)*width;
+                m1_ui_selection(u8g2,x,51,width-2,12,i==cursor);
+                m1_draw_text(u8g2,x+2,60,width-6,text,TEXT_ALIGN_CENTER);
             }
+            u8g2_SetDrawColor(u8g2,1);
         } while (u8g2_NextPage(u8g2));
 
         S_M1_Main_Q_t q_item;
         S_M1_Buttons_Status btn_status;
         if (xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY) == pdTRUE) {
             if (q_item.q_evt_type == Q_EVENT_KEYPAD) {
-                xQueueReceive(button_events_q_hdl, &btn_status, 0);
+                if (xQueueReceive(button_events_q_hdl, &btn_status, 0) != pdTRUE) continue;
                 if (btn_status.event[BUTTON_LEFT_KP_ID] == BUTTON_EVENT_CLICK || 
                     btn_status.event[BUTTON_UP_KP_ID] == BUTTON_EVENT_CLICK) {
                     if (cursor > 0) cursor--; else cursor = button_cnt - 1;
@@ -1006,9 +1009,28 @@ uint8_t m1_message_box_choice(u8g2_t *u8g2, const char *title1, const char *titl
   * @retval
   */
 /*============================================================================*/
+void m1_ui_selection(u8g2_t *display, int x, int y, int w, int h, bool selected)
+{
+    u8g2_SetDrawColor(display, 1);
+    if (selected && !m1_ui.outline) {
+        if (m1_ui.style == 1) u8g2_DrawRBox(display, x, y, w, h, 2);
+        else u8g2_DrawBox(display, x, y, w, h);
+        u8g2_SetDrawColor(display, 0);
+    } else {
+        if (selected || m1_ui.style != 2) {
+            if (m1_ui.style == 1) u8g2_DrawRFrame(display, x, y, w, h, 2);
+            else u8g2_DrawFrame(display, x, y, w, h);
+        }
+        if (selected && m1_ui.outline && w > 6 && h > 6)
+            u8g2_DrawVLine(display, x + 2, y + 3, h - 6);
+    }
+}
+
 void m1_draw_bottom_bar(u8g2_t *u8g2, const uint8_t *lbitmap, const char *ltext, const char *rtext, const uint8_t *rbitmap)
 {
 	u8g2_SetDrawColor(u8g2, M1_DISP_DRAW_COLOR_TXT);
+    if (lbitmap == arrowleft_8x8 && ltext && (!strcmp(ltext, "Back") || !strcmp(ltext, "Done"))) lbitmap = button_back_8x8;
+    u8g2_SetFont(u8g2, M1_DISP_FUNC_MENU_FONT_N);
 	u8g2_DrawHLine(u8g2, 0, 51, 128);
 	u8g2_DrawBox(u8g2, 0, 52, 128, 12);
 
@@ -1039,6 +1061,15 @@ void m1_draw_header_bar(u8g2_t *u8g2, const char *title, const char *badge)
 	char battery_status[8];
 	bool sd_ok;
 	uint8_t title_w;
+    char clock_text[9];
+    if (badge == NULL && m1_ui.clock) {
+        m1_time_t now;
+        m1_get_localtime(&now);
+        if (m1_ui.clock_12h)
+            snprintf(clock_text, sizeof(clock_text), "%u:%02u%c", (now.hour + 11) % 12 + 1, now.minute, now.hour < 12 ? 'a' : 'p');
+        else snprintf(clock_text, sizeof(clock_text), "%02u:%02u", now.hour, now.minute);
+        badge = clock_text;
+    }
 
 	battery_power_status_get(&power_status);
 	snprintf(battery_status, sizeof(battery_status), "%u%%",
@@ -1061,9 +1092,9 @@ void m1_draw_header_bar(u8g2_t *u8g2, const char *title, const char *badge)
 	             title ? title : M1_PRODUCT_MARK, TEXT_ALIGN_LEFT);
 	if (badge != NULL)
 	{
-		m1_draw_text(u8g2, 60, 8, 26, badge, TEXT_ALIGN_LEFT);
+		m1_draw_text(u8g2, 56, 8, 30, badge, TEXT_ALIGN_RIGHT);
 	}
-	m1_draw_text(u8g2, 86, 8, 26, battery_status, TEXT_ALIGN_RIGHT);
+	if (m1_ui.battery) m1_draw_text(u8g2, 86, 8, 26, battery_status, TEXT_ALIGN_RIGHT);
 	if (sd_ok)
 	{
 		u8g2_DrawXBMP(u8g2, 114, 1, 10, 10, sd_card_10x10);
@@ -1090,8 +1121,9 @@ void m1_draw_header_bar(u8g2_t *u8g2, const char *title, const char *badge)
 /*============================================================================*/
 void m1_draw_content_frame(u8g2_t *u8g2, u8g2_uint_t x, u8g2_uint_t y, u8g2_uint_t w, u8g2_uint_t h)
 {
-	u8g2_DrawFrame(u8g2, x, y, w, h);
-	if (w > 4 && h > 4)
+	if (m1_ui.style == 1) u8g2_DrawRFrame(u8g2, x, y, w, h, 3);
+	else if (m1_ui.style == 0) u8g2_DrawFrame(u8g2, x, y, w, h);
+	if (m1_ui.style == 0 && w > 4 && h > 4)
 	{
 		u8g2_DrawFrame(u8g2, x + 1, y + 1, w - 2, h - 2);
 	}
@@ -1182,7 +1214,20 @@ void m1_draw_text(u8g2_t *u8g2,
                  const char *text,
                  S_M1_text_align_t align)
 {
-    if (text == NULL) return;
+    if (text == NULL || max_width <= 0) return;
+    char clipped[96];
+    if (u8g2_GetStrWidth(u8g2, text) > max_width) {
+        size_t n = strlen(text);
+        if (n > sizeof(clipped) - 4) n = sizeof(clipped) - 4;
+        memcpy(clipped, text, n);
+        do {
+            clipped[n] = '\0';
+            strcat(clipped, "...");
+            if (u8g2_GetStrWidth(u8g2, clipped) <= max_width) break;
+        } while (n-- > 0);
+        if (u8g2_GetStrWidth(u8g2, clipped) > max_width) return;
+        text = clipped;
+    }
 
     uint16_t text_width = u8g2_GetStrWidth(u8g2, text);
     int draw_x = x;

@@ -14,6 +14,7 @@
 #define M1_DISPLAY_H_
 
 #include "m1_lcd.h"
+#include "m1_ui_theme.h"
 #include "m1_menu.h"
 
 #define M1_DISP_DRAW_COLOR_BG		0
@@ -172,6 +173,7 @@ extern const S_M1_menu_icon_data menu_fb_icon_text;
 extern const S_M1_menu_icon_data menu_fb_icon_data;
 extern const S_M1_menu_icon_data menu_fb_icon_other;
 
+void m1_ui_selection(u8g2_t *display, int x, int y, int w, int h, bool selected);
 void m1_gui_init(void);
 void m1_gui_welcome_scr(void);
 void m1_gui_menu_update(const S_M1_Menu_t *phmenu, uint8_t sel_item, uint8_t direction);

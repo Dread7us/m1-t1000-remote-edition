@@ -34,6 +34,10 @@
 #include "m1_rgb_backlight.h"
 #include "m1_builtin_apps.h"
 #include "m1_kb_layout.h"
+#include "m1_ui_theme.h"
+m1_ui_preferences_t m1_ui = M1_UI_DEFAULTS;
+static void appearance_load(void);
+static void appearance_save(void);
 
 /*************************** D E F I N E S ************************************/
 
@@ -176,8 +180,7 @@ static void settings_lcd_draw(uint8_t sel)
 
         if (item == sel)
         {
-            u8g2_DrawBox(&m1_u8g2, 6, y - 7, 114, 11);
-            u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+            m1_ui_selection(&m1_u8g2, 6, y - 7, 114, 11, true);
             u8g2_SetFont(&m1_u8g2, M1_DISP_SUB_MENU_FONT_B);
             m1_draw_text(&m1_u8g2, 10, y, 64, label, TEXT_ALIGN_LEFT);
             m1_draw_text(&m1_u8g2, 78, y, 38, value, TEXT_ALIGN_RIGHT);
@@ -186,13 +189,13 @@ static void settings_lcd_draw(uint8_t sel)
         }
         else
         {
-            u8g2_DrawFrame(&m1_u8g2, 6, y - 7, 114, 11);
+            m1_ui_selection(&m1_u8g2, 6, y - 7, 114, 11, false);
             m1_draw_text(&m1_u8g2, 10, y, 64, label, TEXT_ALIGN_LEFT);
             m1_draw_text(&m1_u8g2, 78, y, 38, value, TEXT_ALIGN_RIGHT);
         }
     }
 
-    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Change", arrowright_8x8);
+    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Back", "Change", button_ok_8x8);
     m1_u8g2_nextpage();
 }
 
@@ -282,7 +285,15 @@ void settings_lcd_and_notifications(void)
             needs_redraw = 1;
         }
 
-        /* OK — no special action in LCD & Notifications */
+        /* Center OK changes the selected setting, matching the footer. */
+        if (this_button_status.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK) {
+            if (sel == LCD_SET_BUZZER) m1_buzzer_on = !m1_buzzer_on;
+            else if (sel == LCD_SET_LED) m1_led_notify_on = !m1_led_notify_on;
+            else if (sel == LCD_SET_ORIENT) settings_apply_orientation(!m1_screen_orientation);
+            else if (sel == LCD_SET_SLEEP) m1_sleep_timeout_idx = (m1_sleep_timeout_idx + 1) % 6;
+            else if (sel == LCD_SET_TIMEZONE) m1_tz_offset_hours = m1_tz_offset_hours >= 14 ? -12 : m1_tz_offset_hours + 1;
+            needs_redraw = 1;
+        }
     } /* while (1) */
 } /* settings_lcd_and_notifications */
 
@@ -506,8 +517,7 @@ static void settings_system_draw(uint8_t sel)
         uint8_t y    = 30U + vi * 12U;
         if (item == sel)
         {
-            u8g2_DrawBox(&m1_u8g2, 6, y - 7, 114, 11);
-            u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+            m1_ui_selection(&m1_u8g2, 6, y - 7, 114, 11, true);
             u8g2_SetFont(&m1_u8g2, M1_DISP_SUB_MENU_FONT_B);
             m1_draw_text(&m1_u8g2, 10, y, 70, items[item].lbl, TEXT_ALIGN_LEFT);
             m1_draw_text(&m1_u8g2, 82, y, 34, items[item].val, TEXT_ALIGN_RIGHT);
@@ -516,7 +526,7 @@ static void settings_system_draw(uint8_t sel)
         }
         else
         {
-            u8g2_DrawFrame(&m1_u8g2, 6, y - 7, 114, 11);
+            m1_ui_selection(&m1_u8g2, 6, y - 7, 114, 11, false);
             m1_draw_text(&m1_u8g2, 10, y, 70, items[item].lbl, TEXT_ALIGN_LEFT);
             m1_draw_text(&m1_u8g2, 82, y, 34, items[item].val, TEXT_ALIGN_RIGHT);
         }
@@ -788,6 +798,7 @@ void settings_save_to_sd(void)
 /*============================================================================*/
 void settings_load_from_sd(void)
 {
+    appearance_load();
     FIL fp;
     FRESULT fres;
     UINT br;
@@ -1067,7 +1078,7 @@ static void backlight_menu_draw(uint8_t sel)
     }
     else
     {
-        u8g2_DrawFrame(&m1_u8g2, 6, y - 7, 114, 11);
+        m1_ui_selection(&m1_u8g2, 6, y - 7, 114, 11, false);
         m1_draw_text(&m1_u8g2, 10, y, 64, label, TEXT_ALIGN_LEFT);
         m1_draw_text(&m1_u8g2, 78, y, 38, value, TEXT_ALIGN_RIGHT);
     }
@@ -1127,6 +1138,88 @@ void settings_backlight(void)
             else
                 app_stock_backlight_run();
             needs_redraw = 1;
+        }
+    }
+}
+
+/* Appearance preferences intentionally use a separate, versioned file. */
+#define APPEARANCE_PATH "0:/System/appearance.cfg"
+static const char *appearance_labels[] = {"Theme", "Selection", "Clock", "Time format", "Battery", "Animation", "Menu wrap", "Reset theme"};
+static const uint8_t appearance_counts[] = {3, 2, 2, 2, 2, 2, 2};
+static uint8_t *appearance_field(unsigned i) {
+    switch (i) {
+    case 0: return &m1_ui.style; case 1: return &m1_ui.outline;
+    case 2: return &m1_ui.clock; case 3: return &m1_ui.clock_12h;
+    case 4: return &m1_ui.battery; case 5: return &m1_ui.animations;
+    default: return &m1_ui.wrap;
+    }
+}
+static void appearance_load(void) {
+    FIL file; UINT br; char text[160];
+    if (f_open(&file, APPEARANCE_PATH, FA_READ) != FR_OK &&
+        f_open(&file, APPEARANCE_PATH ".bak", FA_READ) != FR_OK) return;
+    FRESULT result = f_read(&file, text, sizeof(text)-1, &br); f_close(&file);
+    if (result != FR_OK) return;
+    text[br] = 0;
+    if (strncmp(text, "version=1\n", 10)) return;
+    for (unsigned i=0; i<7; ++i) {
+        char key[8]; snprintf(key, sizeof(key), "\np%u=", i);
+        char *value = strstr(text, key);
+        if (value && strlen(value) >= 5 && value[4] >= '0' && value[4] < '0'+appearance_counts[i] &&
+            (value[5] == '\n' || value[5] == '\0')) *appearance_field(i) = value[4]-'0';
+    }
+}
+static void appearance_save(void) {
+    FIL file; UINT bw; char text[160];
+    int n=snprintf(text, sizeof(text), "version=1\n");
+    for (unsigned i=0; i<7; ++i) n+=snprintf(text+n, sizeof(text)-n, "p%u=%u\n", i, *appearance_field(i));
+    f_mkdir("0:/System");
+    if (f_open(&file, APPEARANCE_PATH ".tmp", FA_WRITE|FA_CREATE_ALWAYS) != FR_OK) goto failed;
+    FRESULT result=f_write(&file, text, n, &bw);
+    FRESULT closed=f_close(&file);
+    if (result != FR_OK || bw != (UINT)n || closed != FR_OK) goto failed;
+    /* Keep the prior settings until the replacement is fully written. */
+    f_unlink(APPEARANCE_PATH ".bak");
+    FRESULT moved=f_rename(APPEARANCE_PATH, APPEARANCE_PATH ".bak");
+    if (moved != FR_OK && moved != FR_NO_FILE) goto failed;
+    if (f_rename(APPEARANCE_PATH ".tmp", APPEARANCE_PATH) != FR_OK) {
+        if (moved == FR_OK) f_rename(APPEARANCE_PATH ".bak", APPEARANCE_PATH);
+        goto failed;
+    }
+    return;
+failed:
+    m1_message_box(&m1_u8g2, "Settings not saved", "Mount the SD card", "and try again", "OK");
+}
+void settings_appearance(void) {
+    uint8_t sel=0;
+    for (;;) {
+        static const char *styles[]={"Classic", "Soft", "Minimal"};
+        m1_u8g2_firstpage();
+        m1_draw_header_bar(&m1_u8g2, "Appearance", NULL);
+        u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
+        uint8_t start=sel < 3 ? 0 : sel-2;
+        for (uint8_t row=0; row<3 && start+row<8; ++row) {
+            uint8_t i=start+row; int y=15+row*12;
+            m1_ui_selection(&m1_u8g2, 2, y, 124, 11, i==sel);
+            m1_draw_text(&m1_u8g2, 6, y+8, 72, appearance_labels[i], TEXT_ALIGN_LEFT);
+            const char *value = i==0 ? styles[m1_ui.style] : i==1 ? (m1_ui.outline ? "Outline":"Filled") :
+                i==3 ? (m1_ui.clock_12h ? "12h":"24h") : i==7 ? "OK" : (*appearance_field(i) ? "On":"Off");
+            m1_draw_text(&m1_u8g2, 80, y+8, 42, value, TEXT_ALIGN_RIGHT);
+        }
+        m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Save", "Change", button_ok_8x8);
+        m1_u8g2_nextpage();
+        S_M1_Main_Q_t event; S_M1_Buttons_Status key;
+        if (xQueueReceive(main_q_hdl, &event, portMAX_DELAY)!=pdTRUE || event.q_evt_type!=Q_EVENT_KEYPAD) continue;
+        if (xQueueReceive(button_events_q_hdl, &key, 0)!=pdTRUE) continue;
+        if (key.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK) { appearance_save(); xQueueReset(main_q_hdl); return; }
+        if (key.event[BUTTON_UP_KP_ID]==BUTTON_EVENT_CLICK) sel=m1_ui_step(sel,8,-1,m1_ui.wrap);
+        else if (key.event[BUTTON_DOWN_KP_ID]==BUTTON_EVENT_CLICK) sel=m1_ui_step(sel,8,1,m1_ui.wrap);
+        else if (key.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK || key.event[BUTTON_RIGHT_KP_ID]==BUTTON_EVENT_CLICK || key.event[BUTTON_LEFT_KP_ID]==BUTTON_EVENT_CLICK) {
+            if (sel==7) {
+                if (key.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK && m1_message_box_choice(&m1_u8g2,"Reset appearance?","Your remotes stay", "unchanged", "Cancel\nReset")==2) {
+                    m1_ui_preferences_t defaults=M1_UI_DEFAULTS; m1_ui=defaults;
+                }
+            } else *appearance_field(sel)=m1_ui_step(*appearance_field(sel),appearance_counts[sel],key.event[BUTTON_LEFT_KP_ID]==BUTTON_EVENT_CLICK ? -1:1,true);
         }
     }
 }

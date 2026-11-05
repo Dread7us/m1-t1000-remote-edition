@@ -3,10 +3,17 @@
   "maintainer": "Dread7us",
   "upstream_repository": "https://github.com/dagnazty/M1_T-1000",
   "upstream_commit": "268d8ca1f9ac9bb568ed54f869af83f3bf151c1e",
-  "edition_revision": "4",
-  "revision_4_hardware_status": "Skip controls passed build and host tests; installation and physical confirmation pending",
+  "edition_revision": "5",
+  "revision_4_hardware_status": "Owner confirmed boot and Right skips Mute to Volume Up",
   "revision_3_hardware_status": "Owner confirmed boot, avatar splash and clean title on the M1",
   "revision_2_hardware_status": "Owner confirmed boot and correct semantic remote layout; grouped learning awaits physical confirmation",
-  "hardware_confirmed": ["M1 boot", "portrait remote controls"],
-  "hardware_not_certified": ["IR receiver response", "all other hardware functions"]
+  "hardware_confirmed": [
+    "M1 boot",
+    "portrait remote controls"
+  ],
+  "hardware_not_certified": [
+    "IR receiver response",
+    "all other hardware functions"
+  ],
+  "revision_5_hardware_status": "Appearance foundation built; native checks passed; installation and physical review pending"
 }

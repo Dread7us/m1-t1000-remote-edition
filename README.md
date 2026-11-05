@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-GPL--3.0-7C3AED)](LICENSE)
 [![Maintainer](https://img.shields.io/badge/Maintained_by-Dread7us-E7352C)](https://github.com/Dread7us)
 
-A focused set of **remote-control and button-label improvements** for the MonstaTek M1.
+A focused set of **remote-control and interface improvements** for the MonstaTek M1.
 
 **The firmware foundation is [T-1000 by dagnazty and its contributors](https://github.com/dagnazty/M1_T-1000).**
 This fork documents our additions; credit for the broader firmware belongs upstream.
@@ -45,10 +45,17 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Appearance
+
+<img src="documentation/remote-edition/themes-preview.png" alt="Classic, Soft, and Minimal themes with filled and outlined selection" width="960">
+
+**Revision 5 · Firmware build and native checks passed; physical M1 review pending.** Shared menus, dialogs, status panels, and saved appearance preferences form the first stage of the interface refresh. [Settings, coverage, and next stages](documentation/remote-edition/appearance.md).
+
 ## What this edition changes
 
 | Addition | Result |
 |---|---|
+| **Appearance foundation** | Three themes, filled/outlined selections, header clock and battery options, reduced animation, and shared-menu wrapping. **System → Appearance**. [Preview, coverage, and roadmap](documentation/remote-edition/appearance.md). |
 | **Avatar splash screen** | A personalized monochrome avatar emblem and refreshed startup layout. [Preview and artwork details](documentation/remote-edition/avatar-splash.md). |
 | **Consistent portrait remotes** | Power / Mute across the top; Volume + / Channel + below; Volume − / Channel − on the third row, independent of file order. Input takes Mute's place when available; absent controls leave vacant positions. All remaining buttons follow on later pages. |
 | **Whole-remote learning** | Learn the first button, accept/edit a suggested remote title, name the button, then choose **Add next** to keep building the same remote. |

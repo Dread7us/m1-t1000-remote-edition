@@ -993,7 +993,7 @@ void menu_main_handler_task(void *param)
 							break; // Do nothing
 						sel_item = menu_ctl.menu_item_active;
 						if ( sel_item==0 )
-							sel_item = menu_ctl.num_menu_items - 1;
+							sel_item = m1_ui.wrap ? menu_ctl.num_menu_items - 1 : 0;
 						else
 							sel_item--;
 						menu_ctl.menu_item_active = sel_item;
@@ -1007,7 +1007,7 @@ void menu_main_handler_task(void *param)
 							break; // Do nothing
 						sel_item = menu_ctl.menu_item_active;
 						if ( sel_item==(menu_ctl.num_menu_items - 1) )
-							sel_item = 0;
+							sel_item = m1_ui.wrap ? 0 : menu_ctl.num_menu_items - 1;
 						else
 							sel_item++;
 						menu_ctl.menu_item_active = sel_item;

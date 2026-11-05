@@ -18,6 +18,7 @@
 #include "m1_compile_cfg.h"
 #include "m1_display.h"
 #include "m1_menu.h"
+#include "m1_settings.h"
 #include "m1_system.h"
 
 /********************* F U N C T I O N   P R O T O T Y P E S ******************/
@@ -68,10 +69,12 @@ static S_M1_Menu_t menu_Startup_Splash =
     "Startup Splash", action_startup_splash, NULL, NULL, 0, 0, NULL, NULL, {NULL}
 };
 
+static S_M1_Menu_t menu_Appearance = {"Appearance", settings_appearance, NULL, NULL, 0, 0, NULL, NULL, {NULL}};
+
 static S_M1_Menu_t menu_System =
 {
-    "System", NULL, NULL, NULL, 7, 0, menu_m1_icon_setting, NULL,
-    {&menu_Settings_Backlight, &menu_Settings_LCD_and_Notifications, &menu_Settings_System,
+    "System", NULL, NULL, NULL, 8, 0, menu_m1_icon_setting, NULL,
+    {&menu_Appearance, &menu_Settings_Backlight, &menu_Settings_LCD_and_Notifications, &menu_Settings_System,
      &menu_Setting_Firmware_Update, &menu_Setting_ESP32,
      &menu_Settings_About, &menu_Startup_Splash}
 };

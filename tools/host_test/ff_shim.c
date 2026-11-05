@@ -14,6 +14,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
 static const char *host_path(const char *path)
 {
@@ -73,7 +74,8 @@ FRESULT f_rename(const TCHAR *path_old, const TCHAR *path_new)
 	if (path_old == NULL || path_new == NULL)
 		return FR_INVALID_NAME;
 
-	return (rename(host_path(path_old), host_path(path_new)) == 0) ? FR_OK : FR_DISK_ERR;
+    if (rename(host_path(path_old), host_path(path_new)) == 0) return FR_OK;
+    return errno == ENOENT ? FR_NO_FILE : FR_DISK_ERR;
 }
 
 /*============================================================================*/

@@ -368,8 +368,7 @@ static void ir_custom_draw_list(uint16_t selection, uint16_t total)
 		if (idx == selection)
 		{
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
-			u8g2_DrawBox(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H);
-			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
 			u8g2_DrawStr(&m1_u8g2, 4, y + 8, ir_custom_item_text(idx));
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
@@ -581,8 +580,7 @@ static void ir_custom_draw_remote_menu(const char *name, uint8_t selection)
 		if (i == selection)
 		{
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
-			u8g2_DrawBox(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H);
-			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
 			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_remote_menu_items[i]);
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
@@ -858,8 +856,7 @@ static void ir_custom_draw_button_list(const char *name, uint16_t selection, uin
 
 		if (idx == selection)
 		{
-			u8g2_DrawBox(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H);
-			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
 			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_button_names[idx]);
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
@@ -895,8 +892,7 @@ static void ir_custom_draw_action_menu(const char *name, uint8_t selection)
 
 		if (i == selection)
 		{
-			u8g2_DrawBox(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H);
-			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+			m1_ui_selection(&m1_u8g2, 0, y, 128, IR_CUSTOM_LIST_ITEM_H, true);
 			u8g2_DrawStr(&m1_u8g2, 4, y + 8, s_button_action_items[i]);
 			u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 		}
