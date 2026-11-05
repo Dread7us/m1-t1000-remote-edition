@@ -49,7 +49,7 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 <img src="documentation/remote-edition/themes-preview.png" alt="Classic, Soft, and Minimal themes with filled and outlined selection" width="960">
 
-**Revision 5 · Firmware build and native checks passed; physical M1 review pending.** Shared menus, dialogs, status panels, and saved appearance preferences form the first stage of the interface refresh. [Settings, coverage, and next stages](documentation/remote-edition/appearance.md).
+**Revision 5 · Boot and Appearance changes/saving confirmed on the M1.** Shared menus, dialogs, status panels, and saved appearance preferences form the first stage of the interface refresh. [Settings, coverage, and next stages](documentation/remote-edition/appearance.md).
 
 ## What this edition changes
 

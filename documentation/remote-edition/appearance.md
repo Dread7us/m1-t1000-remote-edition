@@ -33,7 +33,7 @@ For a PC backup, copy `System/appearance.cfg` and your existing `System/settings
 
 ## Continuing the interface work
 
-1. **Foundation (revision 5):** shared styles, predictable common dialogs, bounded labels, live preferences, persistence, and native checks. Physical M1 review is pending.
+1. **Foundation (revision 5):** shared styles, predictable common dialogs, bounded labels, live preferences, persistence, and native checks. Owner confirmed boot and Appearance changes/saving on the physical M1. Other app screens and power-cycle persistence still need separate hardware checks.
 2. **Application migration:** audit each bespoke screen and migrate menus, progress, errors, popups, and action legends to shared components. Preserve radio and remote behavior; validate each affected app on hardware.
 3. **Personal workspace:** favorites/recent items, optional home layouts, shortcuts, splash selection, larger-text layouts, first-run setup, and richer backup/restore controls. These are planned, not implemented in revision 5.
 
