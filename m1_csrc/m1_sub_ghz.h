@@ -164,4 +164,7 @@ extern DMA_HandleTypeDef	hdma_subghz_tx;
 extern uint8_t subghz_tx_tc_flag;
 extern S_M1_RingBuffer subghz_rx_rawdata_rb;
 extern uint8_t subghz_record_mode_flag;
+#include "m1_automation.h"
+bool sub_ghz_automation_check(const char *path);
+m1_action_result_t sub_ghz_automation_send(const char *path,m1_action_cancel_fn cancel);
 #endif /* M1_SUB_GHZ_H_ */

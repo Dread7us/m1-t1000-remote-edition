@@ -45,6 +45,16 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Remote automations
+
+**One sequence. Multiple remotes.** Build named chains under **Infrared → Automations**: select individual IR buttons, insert waits, and include native M1 Sub-GHz recordings.
+
+<img src="documentation/remote-edition/automations-preview.png" alt="Movie Night automation editor with remote, wait, and radio icons and playback progress" width="960">
+
+Reorder, rename, replace, duplicate, or delete actions and chains. Back stops execution. Source checks and fail-fast playback help keep saved actions predictable. **Revision 6 · Build/native tests passed; physical validation pending.**
+
+[Setup, supported formats, Hue status, and validation](documentation/remote-edition/automations.md)
+
 ## Appearance
 
 <img src="documentation/remote-edition/themes-preview.png" alt="Classic, Soft, and Minimal themes with filled and outlined selection" width="960">
@@ -55,6 +65,7 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 | Addition | Result |
 |---|---|
+| **Cross-remote automations** | Named IR/Sub-GHz/Wait sequences with an icon-based editor, reordering, duplication, progress, cancellation, and source checks. [Guide and supported formats](documentation/remote-edition/automations.md). |
 | **Appearance foundation** | Three themes, filled/outlined selections, header clock and battery options, reduced animation, and shared-menu wrapping. **System → Appearance**. [Preview, coverage, and roadmap](documentation/remote-edition/appearance.md). |
 | **Avatar splash screen** | A personalized monochrome avatar emblem and refreshed startup layout. [Preview and artwork details](documentation/remote-edition/avatar-splash.md). |
 | **Consistent portrait remotes** | Power / Mute across the top; Volume + / Channel + below; Volume − / Channel − on the third row, independent of file order. Input takes Mute's place when available; absent controls leave vacant positions. All remaining buttons follow on later pages. |

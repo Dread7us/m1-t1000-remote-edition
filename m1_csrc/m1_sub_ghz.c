@@ -6516,3 +6516,47 @@ void sub_ghz_freq_scanner(void)
     xQueueReset(main_q_hdl);
     m1_app_send_q_message(main_q_hdl, Q_EVENT_MENU_EXIT);
 }
+
+/* One bounded native replay burst; never enters Repeat mode or the replay UI. */
+bool sub_ghz_automation_check(const char *path) {
+    uint32_t frequency;uint8_t modulation;
+    if (!automation_sgh_info(path,&frequency,&modulation)) return false;
+    uint32_t saved=subghz_custom_freq_hz;
+    subghz_custom_freq_hz=frequency;
+    bool permitted=!sub_ghz_fcc_ism_band_check(SUB_GHZ_BAND_CUSTOM,0);
+    subghz_custom_freq_hz=saved;return permitted;
+}
+m1_action_result_t sub_ghz_automation_send(const char *path,m1_action_cancel_fn cancel) {
+    uint32_t frequency;uint8_t modulation;
+    if (!sub_ghz_automation_check(path) || !automation_sgh_info(path,&frequency,&modulation)) return ACTION_FAILED;
+    if (cancel && cancel()) return ACTION_CANCELLED;
+    uint32_t saved_freq=subghz_custom_freq_hz;
+    S_M1_SubGHz_Scan_Config saved_config=subghz_scan_config;
+    m1_action_result_t result=ACTION_FAILED;
+    bool tx_started=false;
+    subghz_custom_freq_hz=frequency;subghz_scan_config.modulation=modulation;
+    subghz_replay_band=SUB_GHZ_BAND_CUSTOM;subghz_replay_channel=0;
+    snprintf((char *)datfile_info.dat_filename,sizeof(datfile_info.dat_filename),"%s",path);
+    menu_sub_ghz_init();
+    if (sub_ghz_ring_buffers_init() || sub_ghz_raw_samples_init()) goto cleanup;
+    subghz_replay_ret_code=sub_ghz_replay_start(false,SUB_GHZ_BAND_CUSTOM,0,tx_power_values[subghz_tx_power_idx]);
+    tx_started=subghz_replay_ret_code!=0;
+    if (!subghz_replay_ret_code || (subghz_replay_ret_code&SUB_GHZ_RAW_DATA_PARSER_ERROR_MASK)) goto cleanup;
+    double_buffer_ptr_id=1;
+    TickType_t start=xTaskGetTickCount();
+    while (xTaskGetTickCount()-start<pdMS_TO_TICKS(30000)) {
+        S_M1_Main_Q_t event;
+        if (cancel && cancel()) {result=ACTION_CANCELLED;break;}
+        if (xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(20))!=pdTRUE || event.q_evt_type!=Q_EVENT_SUBGHZ_TX) continue;
+        subghz_replay_ret_code=sub_ghz_replay_continue(subghz_replay_ret_code);
+        if (subghz_replay_ret_code&SUB_GHZ_RAW_DATA_PARSER_ERROR_MASK) break;
+        if (subghz_replay_ret_code==SUB_GHZ_RAW_DATA_PARSER_IDLE) {result=ACTION_OK;break;}
+    }
+cleanup:
+    /* Stop timer/DMA before releasing any memory that they can read. */
+    if(tx_started) {sub_ghz_raw_tx_stop();sub_ghz_tx_raw_deinit();}
+    sub_ghz_raw_samples_deinit(false);sub_ghz_ring_buffers_deinit();
+    sub_ghz_set_opmode(SUB_GHZ_OPMODE_ISOLATED,SUB_GHZ_BAND_EOL,0,0);
+    menu_sub_ghz_exit();subghz_custom_freq_hz=saved_freq;subghz_scan_config=saved_config;
+    return result;
+}

@@ -58,6 +58,7 @@ typedef enum {
 
 FRESULT f_open   (FIL *fp, const TCHAR *path, BYTE mode);
 FRESULT f_close  (FIL *fp);
+FRESULT f_read   (FIL *fp, void *buffer, UINT length, UINT *read);
 FRESULT f_unlink (const TCHAR *path);
 FRESULT f_rename (const TCHAR *path_old, const TCHAR *path_new);
 FRESULT f_stat   (const TCHAR *path, FILINFO *fno);

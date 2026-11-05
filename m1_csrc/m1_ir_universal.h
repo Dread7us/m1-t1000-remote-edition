@@ -14,6 +14,7 @@
 #define M1_IR_UNIVERSAL_H_
 
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 #include "irmp.h"
 
@@ -63,4 +64,8 @@ void ir_universal_deinit(void);
  * (parse + list + OK=transmit). Reused by the custom-remote module. */
 void ir_replay_file(const char *path);
 
+#include "m1_automation.h"
+uint16_t ir_automation_buttons(const char *path);
+bool ir_automation_button(uint16_t index, char *name, size_t capacity);
+m1_action_result_t ir_automation_send(const char *path, uint16_t index, m1_action_cancel_fn cancel);
 #endif /* M1_IR_UNIVERSAL_H_ */

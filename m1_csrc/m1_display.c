@@ -1087,7 +1087,9 @@ void m1_draw_header_bar(u8g2_t *u8g2, const char *title, const char *badge)
 	 *   [battery% at x=86..112, right-aligned]
 	 *   [SD icon at x=114..124]  or "--" text when no SD
 	 * When no badge is passed, title gets the extra width. */
-	title_w = badge ? 54 : 82;
+    uint16_t badge_width=badge ? u8g2_GetStrWidth(u8g2,badge) : 0;
+    if(badge_width>30)badge_width=30;
+	title_w = badge ? (uint8_t)(80-badge_width) : 82;
 	m1_draw_text(u8g2, 3, 8, title_w,
 	             title ? title : M1_PRODUCT_MARK, TEXT_ALIGN_LEFT);
 	if (badge != NULL)

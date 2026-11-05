@@ -115,6 +115,7 @@ static void show_commands(const char *ir_file_path);
 static void draw_commands(const char *title, uint16_t selection);
 static void show_remote_grid(const char *title, uint16_t *selection);
 static void remote_tx_stop(void);
+static bool s_automation_tx;
 static void transmit_command(const ir_universal_cmd_t *cmd);
 static void transmit_raw_command(const ir_universal_cmd_t *cmd);
 static void ir_power_blast(const char *title, const char *const *paths, uint8_t n_paths);
@@ -1309,6 +1310,7 @@ static void transmit_command(const ir_universal_cmd_t *cmd)
 	m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_M, LED_FASTBLINK_ONTIME_M);
 
 	/* Show transmitting screen */
+    if (!s_automation_tx) {
 	u8g2_FirstPage(&m1_u8g2);
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
@@ -1318,6 +1320,7 @@ static void transmit_command(const ir_universal_cmd_t *cmd)
 	snprintf(tx_info, sizeof(tx_info), "Addr:0x%04X Cmd:0x%04X", cmd->address, cmd->command);
 	u8g2_DrawStr(&m1_u8g2, 4, 45, tx_info);
 	m1_u8g2_nextpage();
+    }
 
 	/* Set up IRMP_DATA for transmission */
 	s_tx_irmp_data.protocol = cmd->protocol;
@@ -1448,6 +1451,7 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 	/* Show transmitting screen */
 	m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_M, LED_FASTBLINK_ONTIME_M);
 
+	if (!s_automation_tx) {
 	u8g2_FirstPage(&m1_u8g2);
 	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 	u8g2_SetFont(&m1_u8g2, M1_DISP_RUN_MENU_FONT_B);
@@ -1459,6 +1463,7 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 	         (unsigned)s_raw_tx_signal.raw.sample_count);
 	u8g2_DrawStr(&m1_u8g2, 4, 45, tx_info);
 	m1_u8g2_nextpage();
+    }
 
 	/* Convert Flipper raw data to OTA buffer format.
 	 * Flipper raw: all positive values, alternating mark/space starting with mark.
@@ -2085,3 +2090,26 @@ static void show_recent_screen(void)
 		} /* if (ret == pdTRUE) */
 	} /* while (1) */
 } // static void show_recent_screen(void)
+
+uint16_t ir_automation_buttons(const char *path) { return parse_ir_file(path); }
+bool ir_automation_button(uint16_t index,char *name,size_t capacity) {
+    if (index>=s_cmd_count || !s_commands[index].valid || (!s_commands[index].is_raw && s_commands[index].protocol==IRMP_UNKNOWN_PROTOCOL)) return false;
+    snprintf(name,capacity,"%s",s_commands[index].name);return true;
+}
+m1_action_result_t ir_automation_send(const char *path,uint16_t index,m1_action_cancel_fn cancel) {
+    char name[IR_UNIVERSAL_NAME_MAX_LEN];m1_action_result_t result=ACTION_FAILED;
+    if (cancel && cancel()) return ACTION_CANCELLED;
+    if (index>=ir_automation_buttons(path) || !ir_automation_button(index,name,sizeof(name))) return result;
+    snprintf(s_raw_tx_filepath,sizeof(s_raw_tx_filepath),"%s",path);
+    s_automation_tx=true;transmit_command(&s_commands[index]);s_automation_tx=false;
+    if (!s_remote_tx_started) return result;
+    TickType_t start=xTaskGetTickCount();
+    while (xTaskGetTickCount()-start<pdMS_TO_TICKS(5000)) {
+        S_M1_Main_Q_t event;
+        if (cancel && cancel()) {result=ACTION_CANCELLED;break;}
+        if (xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(20))==pdTRUE && event.q_evt_type==Q_EVENT_IRRED_TX) {result=ACTION_OK;break;}
+    }
+    remote_tx_stop();
+    m1_led_fast_blink(LED_BLINK_ON_RGB,LED_FASTBLINK_PWM_OFF,LED_FASTBLINK_ONTIME_OFF);
+    return result;
+}

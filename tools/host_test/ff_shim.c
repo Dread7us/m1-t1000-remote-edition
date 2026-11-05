@@ -21,6 +21,11 @@ static const char *host_path(const char *path)
     return path && !strncmp(path,"0:/",3) ? path+3 : path;
 }
 
+FRESULT f_read(FIL *file,void *buffer,UINT length,UINT *read) {
+    *read=(UINT)fread(buffer,1,length,file->fp);
+    return ferror(file->fp) ? FR_DISK_ERR:FR_OK;
+}
+
 /*============================================================================*/
 /**
  * @brief  Map a FatFs access mode to an fopen() mode string and open the file.
