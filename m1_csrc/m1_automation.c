@@ -158,14 +158,15 @@ static void editor(void) {
         int selected=pick_at(chain.name,count,cursor,true);
         if(selected<0){if(!dirty || save())return;continue;}cursor=selected;
         if((unsigned)selected==chain.count){automation_step_t step;if(build_step(&step)){chain.steps[chain.count++]=step;dirty=true;}continue;}
-        static const char *const menu[]={"Move earlier","Move later","Replace action","Rename action","Change wait","Delete action"};
-        int action=actions(chain.steps[selected].label,menu,6);
+        static const char *const menu[]={"Move earlier","Move later","Replace action","Rename action","Change wait","Duplicate action","Delete action"};
+        int action=actions(chain.steps[selected].label,menu,7);
         if(action==0){if(automation_move(&chain,selected,-1)){cursor--;dirty=true;}}
         else if(action==1){if(automation_move(&chain,selected,1)){cursor++;dirty=true;}}
         else if(action==2){automation_step_t step;if(build_step(&step)){chain.steps[selected]=step;dirty=true;}}
         else if(action==3){char name[32];if(m1_vkb_get_filename("Action label",chain.steps[selected].label,name)){snprintf(chain.steps[selected].label,sizeof(chain.steps[selected].label),"%s",name);dirty=true;}}
         else if(action==4){if(chain.steps[selected].type==AUTO_WAIT){if(wait_step(&chain.steps[selected]))dirty=true;}else error("Select a Wait step","Add Wait to set delays");}
-        else if(action==5 && m1_message_box_choice(&m1_u8g2,"Delete this action?",chain.steps[selected].label,"Other steps stay","Cancel\nDelete")==2){automation_remove(&chain,selected);dirty=true;}
+        else if(action==5){if(automation_duplicate(&chain,selected)){cursor=selected+1;dirty=true;}else error("16 steps already","Remove a step to copy");}
+        else if(action==6 && m1_message_box_choice(&m1_u8g2,"Delete this action?",chain.steps[selected].label,"Other steps stay","Cancel\nDelete")==2){automation_remove(&chain,selected);dirty=true;}
     }
 }
 static void progress(unsigned index,const char *state,unsigned percent) {

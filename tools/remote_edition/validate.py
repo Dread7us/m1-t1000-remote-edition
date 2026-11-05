@@ -40,6 +40,7 @@ functions=[]
 for signature in ['static uint8_t map_flipper_protocol(const char *name)', 'static bool parse_ir_signal_block(flipper_file_t *ff, ir_universal_cmd_t *cmd)', 'static uint16_t parse_ir_file(const char *filepath)']:
  start=code.index(signature+'\n{'); end=code.index('\n} //',start)+2
  functions.append(code[start:end])
+automation_api=code[code.index('uint16_t ir_automation_buttons('):code.index('m1_action_result_t ir_automation_send(')]
 harness='''#include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -50,7 +51,8 @@ harness='''#include <stdio.h>
 #include "flipper_file.h"
 #include "m1_ir_remote_view.h"
 static ir_universal_cmd_t s_commands[IR_UNIVERSAL_MAX_CMDS];
-'''+ '\n'.join(functions)+r'''
+static uint16_t s_cmd_count;
+'''+ '\n'.join(functions)+'\n'+automation_api+r'''
 int main(int argc, char **argv) {
  assert(argc==4);
  assert(parse_ir_file(argv[1])==64);
@@ -66,12 +68,24 @@ int main(int argc, char **argv) {
  assert(!strcmp(names[slots[0]],"Power") && !strcmp(names[slots[1]],"Mute"));
  assert(!strcmp(names[slots[2]],"Vol_Up") && !strcmp(names[slots[3]],"Ch_Up"));
  assert(!strcmp(names[slots[4]],"Vol_Down") && !strcmp(names[slots[5]],"Ch_Down"));
+ char button[32];
+ s_cmd_count=0;assert(ir_automation_buttons(argv[1])==64);
+ assert(ir_automation_button(0,button,sizeof(button)) && !strcmp(button,"Button0"));
+ assert(ir_automation_button(63,button,sizeof(button)) && !strcmp(button,"Button63"));
+ assert(ir_automation_buttons(argv[3])==25);
+ assert(!ir_automation_button(25,button,sizeof(button))); /* no stale larger count */
+ assert(!ir_automation_buttons("missing.ir"));assert(!ir_automation_button(0,button,sizeof(button)));
+ assert(ir_automation_buttons("Epson.ir")==2);
+ assert(ir_automation_button(0,button,sizeof(button)) && !strcmp(button,"Power"));
+ assert(ir_automation_button(0,button,sizeof(button))); /* repeated choice is legal */
+ puts("PASS: actual automation picker API works cold, changes remotes, clears missing files and permits repeated Epson Power selection");
  puts("PASS: actual universal parser loads all 64 commands, rejects missing/invalid fields and empty raw data, disambiguates repeated raw names");
  return 0;
 }
 '''
 (out/'parser.c').write_text(harness)
 header='Filetype: IR signals file\nVersion: 1\n#\n'
+(out/'Epson.ir').write_text(header+'name: Power\ntype: parsed\nprotocol: NECext\naddress: 83 55 00 00\ncommand: 90 6F 00 00\n#\nname: Menu\ntype: parsed\nprotocol: NECext\naddress: 83 55 00 00\ncommand: 9A 65 00 00\n#\n')
 (out/'many.ir').write_text(header+''.join(f'name: Button{i}\ntype: parsed\nprotocol: NEC\naddress: 07 00 00 00\ncommand: {i:02X} 00 00 00\n#\n' for i in range(64)))
 (out/'malformed.ir').write_text(header+'''name: MissingAddress
 type: parsed
@@ -312,6 +326,7 @@ static m1_action_result_t sub_ghz_automation_send(const char *p,m1_action_cancel
 static void reset(void){memset(&chain,0,sizeof(chain));chain.count=3;chain.steps[0].type=AUTO_IR;chain.steps[1].type=AUTO_WAIT;chain.steps[1].wait_ms=100;chain.steps[2].type=AUTO_SUBGHZ;cancelled=false;ticks=waits=checks=0;sent[0]=message[0]=0;bad_source=-1;accept=1;stop_gap=0;ir_result=rf_result=ACTION_OK;}
 int main(void){
  reset();execute();assert(!strcmp(sent,"IS")&&checks==6&&waits>=3&&!strcmp(message,"Sequence sent"));
+ reset();chain.steps[1]=chain.steps[0];execute();assert(!strcmp(sent,"IIS")); /* repeated commands must not be deduplicated */
  reset();bad_source=2;execute();assert(!sent[0]&&!strcmp(message,"Source unavailable"));
  reset();accept=0;execute();assert(!sent[0]);
  reset();stop_gap=1;execute();assert(!strcmp(sent,"I")&&!strcmp(message,"Automation stopped"));

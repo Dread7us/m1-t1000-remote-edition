@@ -101,6 +101,13 @@ bool automation_move(automation_t *chain,unsigned index,int direction) {
     unsigned other=direction<0 ? index-1:index+1;
     automation_step_t temp=chain->steps[index];chain->steps[index]=chain->steps[other];chain->steps[other]=temp;return true;
 }
+bool automation_duplicate(automation_t *chain,unsigned index) {
+    if(index>=chain->count || chain->count>=AUTOMATION_STEPS) return false;
+    memmove(&chain->steps[index+2],&chain->steps[index+1],(chain->count-index-1)*sizeof(chain->steps[0]));
+    chain->steps[index+1]=chain->steps[index];
+    ++chain->count;
+    return true;
+}
 bool automation_remove(automation_t *chain,unsigned index) {
     if (index>=chain->count) return false;
     memmove(&chain->steps[index],&chain->steps[index+1],(chain->count-index-1)*sizeof(chain->steps[0]));

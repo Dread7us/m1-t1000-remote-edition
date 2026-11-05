@@ -1,10 +1,10 @@
-# Remote automations · revision 6
+# Remote automations · revision 7
 
 **Infrared → Automations** builds named sequences across saved IR remotes and native Sub-GHz recordings. Each sequence runs once when you choose Run and confirm; it does not run on boot or on a schedule.
 
 ![Automation editor and playback screens](automations-preview.png)
 
-The preview is rendered from the actual firmware list/progress functions, fonts, and icons. It is not a device photograph. Build and native tests passed; installation and physical IR/RF validation are pending.
+The preview is rendered from the actual firmware list/progress functions, fonts, and icons. It is not a device photograph. Revision 6 boot and menu presence were confirmed on the M1. Revision 7 fixes direct selection without first opening a remote elsewhere. Build and native tests passed; revision 7 installation and physical IR/RF validation are pending.
 
 ## Build a sequence
 
@@ -12,7 +12,7 @@ The preview is rendered from the actual firmware list/progress functions, fonts,
 2. Choose **+ Add action → IR remote button**, browse the IR folders, and choose a specific button from a saved remote. Repeat for other devices/remotes.
 3. Add **Wait / delay** steps for equipment that needs time to start. Choices range from 0.10 to 60 seconds.
 4. Add a **Sub-GHz recording** from `SUBGHZ` when needed.
-5. Select any existing step to move it earlier/later, replace it, rename its label, change a Wait duration, or confirm deletion.
+5. Select any existing step to move it earlier/later, replace it, rename its label, change a Wait duration, duplicate it, or confirm deletion. **Duplicate action** inserts a separate copy immediately after the selected step. Repeated commands are retained, including Power → Wait → Power.
 6. Press **Back** in the editor to save. Open the automation's menu and choose **Run sequence**, then confirm. Keep the M1 aimed toward your IR devices.
 
 For example: TV Power → Wait 2 seconds → Surround Power → a saved Sub-GHz lamp/socket action. Prefer discrete On commands when a remote provides them: a Power toggle changes the device's current state.
@@ -32,11 +32,11 @@ The automation menu also supports **Rename**, **Duplicate**, and confirmed **Del
 
 Source files must fit within 256 KiB for fingerprinting. Native RF captures must have CRLF line endings, valid 16-bit durations, an even number of timing entries, and no more than five seconds of recorded timings. Long native data lines are supported. A radio action times out after 30 seconds, and IR after five seconds. Unsupported recordings are rejected rather than truncated for replay.
 
-Flipper `.sub` KEY/RAW imports are **not selected directly by this revision's chain picker**. Use a working native M1 recording for an RF step. IR automation retains the existing replay engine's protocol and raw-buffer limits.
+Flipper `.sub` KEY/RAW imports are **not selected directly by the chain picker**. Use a working native M1 recording for an RF step. IR automation retains the existing replay engine's protocol and raw-buffer limits.
 
 ## Philips Hue
 
-Direct Hue control is not implemented in revision 6. Hue lights use Zigbee/Bluetooth; Hue Bridge integration requires a separate paired network/API connection. The ESP32-C6's presence alone does not supply that integration. See [Philips Hue's connection overview](https://www.philips-hue.com/en-us/explore-hue/how-it-works.) and [Hue's developer guide](https://developers.meethue.com/develop/get-started-2/).
+Direct Hue control is not implemented. Hue lights use Zigbee/Bluetooth; Hue Bridge integration requires a separate paired network/API connection. The ESP32-C6's presence alone does not supply that integration. See [Philips Hue's connection overview](https://www.philips-hue.com/en-us/explore-hue/how-it-works.) and [Hue's developer guide](https://developers.meethue.com/develop/get-started-2/).
 
 An RF-controlled lamp/socket action in the example is an ordinary compatible Sub-GHz device, not a claim of direct Hue support.
 
@@ -57,3 +57,5 @@ The parser/editor live in separate automation modules. Small adapters reuse the 
 - Existing IR parser, remote builder, navigation, Skip, theme, and splash regression checks remain included.
 
 Physical transmission and end-device response still need M1 testing; host tests and a build do not certify those behaviors.
+
+Regression coverage includes the actual parser and automation picker API from a cold start, switching between large and small remotes, clearing failed loads, Epson NECext Power selection, and repeated-command save/reload/playback.

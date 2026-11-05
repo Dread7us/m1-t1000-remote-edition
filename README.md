@@ -51,7 +51,7 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 <img src="documentation/remote-edition/automations-preview.png" alt="Movie Night automation editor with remote, wait, and radio icons and playback progress" width="960">
 
-Reorder, rename, replace, duplicate, or delete actions and chains. Back stops execution. Source checks and fail-fast playback help keep saved actions predictable. **Revision 6 · Build/native tests passed; physical validation pending.**
+Reorder, rename, replace, duplicate, or delete actions and chains. Repeat a button as many times as needed within the step limit; **Duplicate action** creates an independent copy. Back stops execution. Source checks and fail-fast playback help keep saved actions predictable. **Revision 7 · Direct remote selection and repeated actions tested; physical validation pending.**
 
 [Setup, supported formats, Hue status, and validation](documentation/remote-edition/automations.md)
 

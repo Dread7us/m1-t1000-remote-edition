@@ -26,8 +26,15 @@ int main(void) {
     for(unsigned i=0;i<a.count;++i){assert(a.steps[i].type==b.steps[i].type);assert(!strcmp(a.steps[i].label,b.steps[i].label));if(a.steps[i].type!=AUTO_WAIT){assert(a.steps[i].fingerprint==b.steps[i].fingerprint);assert(a.steps[i].button==b.steps[i].button);assert(!strcmp(a.steps[i].path,b.steps[i].path));}else assert(a.steps[i].wait_ms==b.steps[i].wait_ms);}
     assert(!automation_move(&b,0,-1));assert(!automation_move(&b,15,1));assert(automation_move(&b,1,-1));assert(!strcmp(b.steps[0].label,"Device 1"));
     assert(automation_remove(&b,0));assert(b.count==15 && !strcmp(b.steps[0].label,"Device 0"));assert(!automation_remove(&b,99));
+    assert(automation_duplicate(&b,0));assert(b.count==16 && !memcmp(&b.steps[0],&b.steps[1],sizeof(b.steps[0])));
+    assert(!automation_duplicate(&b,0)); /* full chains cannot overwrite the last step */
+    assert(automation_remove(&b,1));
     fail_replace=1;assert(!automation_save("0:/test.chain",&b));fail_replace=0;
     assert(automation_load("test.chain",&b));assert(b.count==16 && !strcmp(b.steps[0].label,"Device 0"));
+    automation_t repeated={0};strcpy(repeated.name,"Projector off");repeated.count=1;repeated.steps[0]=a.steps[0];
+    assert(automation_duplicate(&repeated,0));assert(automation_save("0:/repeated.chain",&repeated));
+    assert(automation_load("repeated.chain",&b) && b.count==2 && !memcmp(&b.steps[0],&b.steps[1],sizeof(b.steps[0])));
+    b.steps[0].button=2;assert(b.steps[1].button==repeated.steps[1].button); /* independent copies */
     strcpy(b.name,"injected\nType: 2");assert(!automation_save("0:/test.chain",&b));
     bad_chain("Filetype: M1 Automation\nVersion: 2\nName: Test\nSteps: 0\n");
     bad_chain("Filetype: M1 Automation\nVersion: 1\nName: Test\nSteps: 17\n");

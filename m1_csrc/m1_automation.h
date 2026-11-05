@@ -28,6 +28,7 @@ bool automation_save(const char *path, const automation_t *chain);
 bool automation_fingerprint(const char *path, uint32_t *result);
 bool automation_move(automation_t *chain, unsigned index, int direction);
 bool automation_remove(automation_t *chain, unsigned index);
+bool automation_duplicate(automation_t *chain, unsigned index);
 bool automation_sgh_info(const char *path, uint32_t *frequency, uint8_t *modulation);
 void automation_run(void);
 #endif

@@ -2091,7 +2091,10 @@ static void show_recent_screen(void)
 	} /* while (1) */
 } // static void show_recent_screen(void)
 
-uint16_t ir_automation_buttons(const char *path) { return parse_ir_file(path); }
+uint16_t ir_automation_buttons(const char *path) {
+    s_cmd_count=parse_ir_file(path);
+    return s_cmd_count;
+}
 bool ir_automation_button(uint16_t index,char *name,size_t capacity) {
     if (index>=s_cmd_count || !s_commands[index].valid || (!s_commands[index].is_raw && s_commands[index].protocol==IRMP_UNKNOWN_PROTOCOL)) return false;
     snprintf(name,capacity,"%s",s_commands[index].name);return true;
