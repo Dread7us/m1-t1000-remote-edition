@@ -34,12 +34,6 @@ Source files must fit within 256 KiB for fingerprinting. Native RF captures must
 
 Flipper `.sub` KEY/RAW imports are **not selected directly by the chain picker**. Use a working native M1 recording for an RF step. IR automation retains the existing replay engine's protocol and raw-buffer limits.
 
-## Philips Hue
-
-Direct Hue control is not implemented. Hue lights use Zigbee/Bluetooth; Hue Bridge integration requires a separate paired network/API connection. The ESP32-C6's presence alone does not supply that integration. See [Philips Hue's connection overview](https://www.philips-hue.com/en-us/explore-hue/how-it-works.) and [Hue's developer guide](https://developers.meethue.com/develop/get-started-2/).
-
-An RF-controlled lamp/socket action in the example is an ordinary compatible Sub-GHz device, not a claim of direct Hue support.
-
 ## Files, backups, and upstream maintenance
 
 Chains live under `IR/Automations/chain_NNN.chain`. The text format starts with `Filetype: M1 Automation` and `Version: 1`, then stores the display name and ordered step references. Source `.ir`/`.sgh` files are read only. Preferences are independent of the fixed upstream firmware config structure.

@@ -73,7 +73,7 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 Reorder, rename, replace, duplicate, or delete actions and chains. Repeat a button as many times as needed within the step limit; **Duplicate action** creates an independent copy. Back stops execution. Source checks and fail-fast playback help keep saved actions predictable. **Revision 7 · Direct remote selection and repeated actions tested; physical validation pending.**
 
-[Setup, supported formats, Hue status, and validation](documentation/remote-edition/automations.md)
+[Setup, supported formats, and validation](documentation/remote-edition/automations.md)
 
 ## Appearance
 
