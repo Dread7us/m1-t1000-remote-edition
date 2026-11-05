@@ -8,7 +8,7 @@ Preview uses the firmware's actual scrolling/wrapping code and fonts on a deskto
 
 ![Actual home header with the complete product name](home-header-preview.png)
 
-Revision 9 gives the home screen's separate header a complete **T-1000** label. Stable right-aligned time/battery slots leave enough room even with 12-hour a/p time and 100% battery. The product mark fits without needing motion; a longer future title uses scrolling. Long submenu headings also scroll. The actual header is tested in 1,056 setting/status combinations for complete branding, bounds, and non-overlapping text. The preview uses the actual firmware drawing function and font, not a device photograph. Physical confirmation is pending.
+Revision 9 gives the home screen's separate header a complete **T-1000** label. Stable right-aligned time/battery slots leave enough room even with 12-hour a/p time and 100% battery. The product mark fits without needing motion; a longer future title uses scrolling. Long submenu headings also scroll. The actual header is tested in 1,056 setting/status combinations for complete branding, bounds, and non-overlapping text. The preview uses the actual firmware drawing function and font, not a device photograph. The complete home header is confirmed on the physical M1.
 
 ## Reading long text
 
@@ -16,9 +16,8 @@ Revision 9 gives the home screen's separate header a complete **T-1000** label. 
 - **My Remotes:** manager/button lists refresh their long labels rather than requiring another button press.
 - **Common messages:** text wraps into three readable lines per page. Use **Up/Down** to change pages, **OK** to acknowledge, or **Back** to return.
 - **Confirmation dialogs:** **Left/Right** selects a choice, **OK** confirms, and **Back** cancels. Up/Down changes pages for a long message; on a one-page dialog it can also select choices.
-- **Older app screens:** open **System → Read screen text** after encountering clipped text. The drawing layer captures the original overflowing string, and the viewer wraps it across pages. OK advances to the next saved entry; Back leaves the viewer. The eight most recently captured distinct overflowing strings (up to 512 characters each) stay in RAM until reboot; they are not written to the SD card.
 
-The application-wide drawing hook covers direct `u8g2_DrawStr` calls without putting a background task in charge of drawing over radio or capture screens. Shared bounded labels also record their original contents before fitting them. Independent legacy screens are not all converted to animated layouts: the text viewer supplies full-text access without changing their event/timing behavior. Strings already shortened before drawing cannot be reconstructed by the drawing hook.
+Revision 11 removes the separate text-history viewer and its drawing hook. Shared scrolling labels and paged dialogs remain. Independent legacy screens still need individual layout review; this does not claim that every app screen has been redesigned.
 
 The [text-call inventory](text-audit.json) records direct text drawing across application modules. It is a static review inventory, not certification that every third-party app, font, language, and screen fits perfectly.
 

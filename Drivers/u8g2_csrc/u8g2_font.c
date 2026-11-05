@@ -1038,10 +1038,7 @@ static u8g2_uint_t u8g2_draw_string_2x(u8g2_t *u8g2, u8g2_uint_t x, u8g2_uint_t 
 
 u8g2_uint_t u8g2_DrawStr(u8g2_t *u8g2, u8g2_uint_t x, u8g2_uint_t y, const char *str)
 {
-#ifdef M1_UI_TEXT_CAPTURE
-  extern void m1_ui_capture_text(u8g2_t *, const char *, unsigned);
-  m1_ui_capture_text(u8g2,str,x < u8g2_GetDisplayWidth(u8g2) ? u8g2_GetDisplayWidth(u8g2)-x : u8g2_GetDisplayWidth(u8g2));
-#endif
+
 
   u8g2->u8x8.next_cb = u8x8_ascii_next;
   return u8g2_draw_string(u8g2, x, y, str);

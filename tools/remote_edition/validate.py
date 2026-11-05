@@ -525,7 +525,7 @@ int main(void){
 (out/'ir-irq.c').write_text(irq);exe=compile('ir-irq',[out/'ir-irq.c']);print(run([exe]))
 
 text_source=(src/'m1_text.c').read_text()
-text_functions='\n'.join(extract_body(text_source,name) for name in ['void m1_text_reset_scroll(', 'void m1_ui_capture_text(', 'void m1_draw_marquee(', 'static size_t next_line(', 'static unsigned page_count('])
+text_functions='\n'.join(extract_body(text_source,name) for name in ['void m1_text_reset_scroll(', 'void m1_draw_marquee(', 'static size_t next_line(', 'static unsigned page_count('])
 text_test=r"""#include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -536,7 +536,6 @@ typedef int u8g2_t;
 #define TEXT_SLOTS 8
 #define TEXT_LENGTH 512
 #define TEXT_ALIGN_LEFT 0
-static char history[8][513];static unsigned history_count,history_next;static bool reading;
 static uint32_t scroll_start,ticks;static int left,right,seen_start,seen_end;
 static uint32_t HAL_GetTick(void){return ticks;}
 static unsigned u8g2_GetStrWidth(u8g2_t *d,const char *s){(void)d;return (unsigned)strlen(s)*5;}
@@ -547,13 +546,12 @@ int main(void){
  u8g2_t screen=0;char text[500];strcpy(text,"START ");for(int i=6;i<480;++i)text[i]='A'+i%26;strcpy(text+480," END");
  left=3;right=63;m1_text_reset_scroll();
  for(ticks=0;ticks<180000;ticks+=120)m1_draw_marquee(&screen,3,22,60,text);
- assert(seen_start&&seen_end&&history_count==1&&!strcmp(history[0],text));
- reading=true;m1_ui_capture_text(&screen,"another long text",10);assert(history_count==1);reading=false;
+ assert(seen_start&&seen_end);
  char line[128],joined[600];joined[0]=0;size_t position=0;
  do {line[0]=0;position=next_line(&screen,text,position,line,60);assert(strlen(line)<=12);strcat(joined,line);}while(text[position]);
  assert(!strcmp(joined,text));assert(page_count(&screen,text)>1);
  assert(page_count(&screen,"")==1);position=next_line(&screen,"first\nsecond",0,line,118);assert(position==6&&!strcmp(line,"first"));
- puts("PASS: actual scrolling exposes both ends of long text in bounds; wrapped pages preserve all source characters; overflow history is copied and deduplicated");return 0;
+ puts("PASS: actual scrolling exposes both ends of long text in bounds; wrapped pages preserve all source characters");return 0;
 }
 """
 (out/'readable-text.c').write_text(text_test);exe=compile('readable-text',[out/'readable-text.c']);print(run([exe]))
@@ -783,6 +781,8 @@ workflow_test=r"""#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include "m1_ui_theme.h"
+m1_ui_preferences_t m1_ui=M1_UI_DEFAULTS;
 typedef struct {uint16_t year;uint8_t month,day,hour,minute,second,weekday;} m1_time_t;
 typedef int BaseType_t;
 typedef struct {int q_evt_type;} S_M1_Main_Q_t;
@@ -798,19 +798,61 @@ typedef struct {int event[7];} S_M1_Buttons_Status;
 #define BUTTON_LEFT_KP_ID 4
 #define BUTTON_RIGHT_KP_ID 5
 static int main_q_hdl,button_events_q_hdl=1,m1_u8g2,read_local,wrote_local,fail_write,keys;
+static int script[16],script_count,choice_result=1,confirms,saved_hour;static char message[40];
 static m1_time_t local={2026,11,5,13,1,0,4};
 static void m1_get_localtime(m1_time_t *d){*d=local;++read_local;}
-static bool m1_set_localtime(const m1_time_t *d){assert(d->hour==13&&d->minute==1);++wrote_local;return !fail_write;}
-static void settings_set_time_draw(const m1_time_t *d,unsigned f){(void)f;assert(d->hour==13);}
+static bool m1_set_localtime(const m1_time_t *d){assert(d->hour<24&&d->minute==1);saved_hour=d->hour;++wrote_local;return !fail_write;}
+static void settings_set_time_draw(const m1_time_t *d,unsigned f){(void)f;assert(d->hour==13 || d->hour==14);}
 static unsigned settings_dim(unsigned y,unsigned m){(void)y;(void)m;return 30;}
-static void m1_message_box(int *d,const char *a,const char *b,const char *c,const char *e){(void)d;(void)a;(void)b;(void)c;(void)e;fail_write=0;}
+static void m1_message_box(int *d,const char *a,const char *b,const char *c,const char *e){(void)d;(void)b;(void)c;(void)e;snprintf(message,sizeof(message),"%s",a);fail_write=0;}
+static int m1_message_box_choice(int *d,const char *a,const char *b,const char *c,const char *e){(void)d;(void)a;(void)b;(void)c;(void)e;++confirms;return choice_result;}
 static void m1_buzzer_notification(void){}
 static void xQueueReset(int q){(void)q;}
-static int xQueueReceive(int q,void *p,unsigned timeout){(void)timeout;if(q){S_M1_Buttons_Status *b=p;memset(b,0,sizeof(*b));b->event[keys++?BUTTON_BACK_KP_ID:BUTTON_OK_KP_ID]=1;}else ((S_M1_Main_Q_t *)p)->q_evt_type=1;return 1;}
+static int xQueueReceive(int q,void *p,unsigned timeout){(void)timeout;if(q){S_M1_Buttons_Status *b=p;memset(b,0,sizeof(*b));int k=script_count?script[keys++]:keys++?BUTTON_BACK_KP_ID:BUTTON_OK_KP_ID;b->event[k]=1;}else ((S_M1_Main_Q_t *)p)->q_evt_type=1;return 1;}
 """+workflow+r"""
-int main(void){settings_set_time();assert(read_local==1&&wrote_local==1);keys=0;fail_write=1;settings_set_time();assert(read_local==2&&wrote_local==2);puts("PASS: actual Set Time editor reads/saves local time and handles a failed save without claiming success");return 0;}
+int main(void){settings_set_time();assert(read_local==1&&wrote_local==1&&!strcmp(message,"Time saved"));keys=0;fail_write=1;settings_set_time();assert(read_local==2&&wrote_local==2&&!strcmp(message,"Clock not saved"));
+ script_count=5;script[0]=script[1]=script[2]=BUTTON_RIGHT_KP_ID;script[3]=BUTTON_UP_KP_ID;script[4]=BUTTON_BACK_KP_ID;
+ keys=0;settings_set_time();assert(wrote_local==3&&saved_hour==14&&confirms==1&&!strcmp(message,"Time saved"));
+ keys=0;choice_result=2;settings_set_time();assert(wrote_local==3&&confirms==2);
+ keys=0;choice_result=0;script_count=6;script[5]=BUTTON_OK_KP_ID;settings_set_time();assert(wrote_local==4&&saved_hour==14&&confirms==3);
+ keys=0;script_count=1;script[0]=BUTTON_BACK_KP_ID;settings_set_time();assert(wrote_local==4&&confirms==3);
+ puts("PASS: actual Date & Time editor reads/saves local time, confirms success, reports failed saves, and supports Save/Discard/keep-editing on unsaved Back");return 0;}
+
 """
 (out/'clock-editor.c').write_text(workflow_test);exe=compile('clock-editor',[out/'clock-editor.c']);print(run([exe]))
+
+
+# Exercise the actual persistence routine with short writes, sync/close errors,
+# interrupted rename recovery, all brightness levels and pre-load boot gating.
+settings=(src/'m1_settings.c').read_text()
+def function_body(text, signature):
+ start=text.index(signature+'\n{');body=text.index('{',start);end=body+1;depth=1
+ while depth:
+  depth+=(text[end]=='{')-(text[end]=='}');end+=1
+ return text[start:end]
+light=(repo/'tools/remote_edition/backlight_prelude.h').read_text()
+light+='\n'+function_body(settings,'bool settings_save_to_sd(void)')
+light+='\n'+function_body(settings,'void settings_restore_backlight(void)')
+light+=r"""
+int main(void){
+ settings_restore_backlight();assert(applied==-1);s_backlight_ready=true;
+ for(unsigned i=0;i<5;i++){m1_brightness_level=i;settings_restore_backlight();assert(applied==s_brightness_values[i]);assert(settings_save_to_sd());char expected[32];snprintf(expected,sizeof(expected),"brightness=%u\n",i);assert(strstr(files[0],expected)==files[0]);}
+ char old[1024];strcpy(old,files[0]);m1_brightness_level=1;
+ fail_write=1;assert(!settings_save_to_sd()&&!strcmp(files[0],old));fail_write=0;
+ fail_sync=1;assert(!settings_save_to_sd()&&!strcmp(files[0],old));fail_sync=0;
+ fail_close=1;assert(!settings_save_to_sd()&&!strcmp(files[0],old));fail_close=0;
+ fail_install=1;assert(!settings_save_to_sd()&&exists[0]&&!strcmp(files[0],old));fail_install=0;
+ assert(!f_rename("settings","settings.bak"));fail_install=1;assert(!settings_save_to_sd()&&exists[2]&&!strcmp(files[2],old));fail_install=0;
+ assert(settings_save_to_sd()&&strstr(files[0],"brightness=1\n")==files[0]);
+ m1_brightness_level=255;settings_restore_backlight();assert(applied==255);
+ puts("PASS: actual brightness restoration respects boot readiness and every level; settings commit checks short writes/sync/close, preserves prior data and recovers interrupted rename");return 0;}
+"""
+(out/'backlight.c').write_text(light);exe=compile('backlight',[out/'backlight.c']);print(run([exe]))
+assert 'm1_backlight_on(M1_BACKLIGHT_BRIGHTNESS)' not in system
+assert 'm1_backlight_on(192)' not in (src/'m1_sys_init.c').read_text()
+assert 'SETTINGS_FILE_PATH ".bak", FA_READ' in settings
+stock=(src/'app_stock_backlight.c').read_text()
+assert stock.count('if (!settings_save_to_sd())')==4
 
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

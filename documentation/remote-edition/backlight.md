@@ -1,0 +1,7 @@
+# Saved backlight · revision 11
+
+The stock M1 backlight now saves each brightness or On/Off change immediately to `System/settings.cfg`. Returning to the splash/home screen and waking from display sleep restore that selected level instead of forcing maximum brightness. Boot keeps the light off until settings have loaded, avoiding the previous default-brightness flash.
+
+Settings writes are checked for short writes, sync failures and close failures. A temporary file is synced and closed before replacing the settings file; the prior file is retained as `.bak`. Startup can load that backup if power was interrupted between renames. A failed brightness save displays **Brightness not saved**; mount the SD card and try again. Settings survive normal reboots and complete battery loss because they live on the SD card. Keep that card installed. Sudden removal/power failure during a physical SD write can still affect the card filesystem; no software can guarantee against every such failure.
+
+Native tests exercise the actual restoration and settings-save code for every brightness level, boot gating, short writes, sync/close failures, failed replacement and interrupted-rename recovery. The firmware builds locally. Physical navigation/reboot confirmation for revision 11 is pending. These changes target the built-in stock backlight; optional RGB hardware is not physically validated.

@@ -178,7 +178,7 @@ void m1_system_init_task(void *param)
 			/* Init backlight hardware based on saved setting */
 			/* Default: stock LP5814. settings_load_from_sd() applies correct type. */
 			lp5814_init();
-			m1_backlight_on(192); /* Default brightness — settings load overrides */
+			m1_backlight_on(0); /* Stay dark until saved brightness has loaded. */
 
 			m1_lcd_init(&hspi1);
 			m1_sdcard_init(&hsd1);

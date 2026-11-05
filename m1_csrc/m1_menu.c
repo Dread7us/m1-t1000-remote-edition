@@ -463,7 +463,7 @@ S_M1_Menu_t menu_Settings_LCD_and_Notifications =
 
 S_M1_Menu_t menu_Settings_System =
 {
-    "System", settings_system, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "Device options", settings_system, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 S_M1_Menu_t menu_Setting_Firmware_Update =

@@ -1135,7 +1135,6 @@ void m1_draw_text(u8g2_t *u8g2,
                  S_M1_text_align_t align)
 {
     if (text == NULL || max_width <= 0) return;
-    m1_ui_capture_text(u8g2,text,(unsigned)max_width);
     char clipped[96];
     if (u8g2_GetStrWidth(u8g2, text) > max_width) {
         size_t n = strlen(text);

@@ -35,3 +35,5 @@ static void u8g2_DrawStr(u8g2_t *d,int x,int y,const char *text) {
 }
 static void m1_backlight_on(int level) {(void)level;}
 static unsigned HAL_GetTick(void) {return 123;}
+
+static void settings_restore_backlight(void) {}

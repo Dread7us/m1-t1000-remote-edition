@@ -45,9 +45,13 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Saved settings and a cleaner System menu
+
+**Revision 11:** backlight changes save immediately and stay consistent on the splash/home screen and after restarting. **System → Date & Time** offers an explicit **OK Save**, unsaved-change choices, and a **Time saved** confirmation. The nested settings panel is now **Device options**; the separate text-history viewer has been removed. [Brightness persistence and validation](documentation/remote-edition/backlight.md).
+
 ## Clock consistency
 
-**Revision 10:** Set Time and the home screen use the same local time, with consistent 12-hour AM/PM display. RTC failures are checked, and Wi-Fi sync preserves the configured UTC offset. [One-time setup after updating and validation](documentation/remote-edition/clock.md).
+**Revision 10 · Clock agreement confirmed on the M1 after saving:** Set Time and the home screen use the same local time, with consistent 12-hour AM/PM display. RTC failures are checked, and Wi-Fi sync preserves the configured UTC offset. [One-time setup after updating and validation](documentation/remote-edition/clock.md).
 
 ## Readable text and IR recovery
 
@@ -57,7 +61,7 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 <img src="documentation/remote-edition/readability-preview.png" alt="Long selections scrolling and message text wrapped across readable pages" width="960">
 
-**Revision 8 · Built and native-tested; physical verification pending.** Long selections scroll, common messages wrap into pages, and **System → Read screen text** opens overflowing text from older screens. IR updates address PWM initialization, timer recovery, final-sample bounds, complete protocol frames, and Denon/Kaseikyo field conversion.
+**Revision 8 · Built and native-tested; physical verification pending.** Long selections scroll, common messages wrap into pages. IR updates address PWM initialization, timer recovery, final-sample bounds, complete protocol frames, and Denon/Kaseikyo field conversion.
 
 [Reading controls, coverage, and IR validation](documentation/remote-edition/text-and-ir.md)
 

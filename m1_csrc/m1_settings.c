@@ -66,6 +66,13 @@ static void appearance_save(void);
 /***************************** V A R I A B L E S ******************************/
 
 static const uint8_t s_brightness_values[] = { 0, 64, 128, 192, 255 };
+static bool s_backlight_ready;
+void settings_restore_backlight(void)
+{
+    if (s_backlight_ready)
+        m1_backlight_on(s_brightness_values[m1_brightness_level < 5 ? m1_brightness_level : 4]);
+}
+
 static const char *s_brightness_text[] = { "Off", "Low", "Med", "High", "Max" };
 static const char *s_orient_text[] = { "Normal", "Southpaw" };
 static const char *s_sleep_text[] = { "30s", "1 min", "5 min", "10 min", "15 min", "Never" };
@@ -83,7 +90,7 @@ static void settings_apply_orientation(uint8_t orient);
 static const char *settings_lcd_item_label(uint8_t item);
 static const char *settings_lcd_item_value(uint8_t item);
 static void settings_lcd_draw(uint8_t sel);
-void settings_save_to_sd(void);
+bool settings_save_to_sd(void);
 
 /*************** F U N C T I O N   I M P L E M E N T A T I O N ****************/
 
@@ -345,18 +352,21 @@ static void settings_set_time_draw(const m1_time_t *dt, uint8_t field)
     u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
     m1_draw_header_bar(&m1_u8g2, "Local time", "Save");
 
+    u8g2_SetFont(&m1_u8g2,M1_DISP_FUNC_MENU_FONT_N);
+    m1_draw_text(&m1_u8g2,8,19,114,"L/R field  U/D edit",TEXT_ALIGN_LEFT);
+
     /* Date line: YYYY-MM-DD */
     snprintf(line, sizeof(line), "%04u-%02u-%02u",
              (unsigned)dt->year, (unsigned)dt->month, (unsigned)dt->day);
     u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-    m1_draw_text(&m1_u8g2, 8, 28, 114, line, TEXT_ALIGN_LEFT);
+    m1_draw_text(&m1_u8g2, 8, 27, 114, line, TEXT_ALIGN_LEFT);
 
     /* Time line: HH:MM:SS */
     if(m1_ui.clock_12h)
         snprintf(line,sizeof(line),"%02u:%02u:%02u %s",(dt->hour+11)%12+1,dt->minute,dt->second,dt->hour<12?"AM":"PM");
     else snprintf(line,sizeof(line),"%02u:%02u:%02u",dt->hour,dt->minute,dt->second);
     u8g2_SetFont(&m1_u8g2, M1_DISP_LARGE_FONT_1B);
-    m1_draw_text(&m1_u8g2, 8, 44, 114, line, TEXT_ALIGN_LEFT);
+    m1_draw_text(&m1_u8g2, 8, 46, 114, line, TEXT_ALIGN_LEFT);
 
     /* Measure the prefix in the actual font so every field stays aligned. */
     char prefix[32];unsigned position;
@@ -371,9 +381,9 @@ static void settings_set_time_draw(const m1_time_t *dt, uint8_t field)
     }
     prefix[position]=0;
     u8g2_SetDrawColor(&m1_u8g2,M1_DISP_DRAW_COLOR_TXT);
-    u8g2_DrawHLine(&m1_u8g2,8+u8g2_GetStrWidth(&m1_u8g2,prefix),field<3?30:46,u8g2_GetStrWidth(&m1_u8g2,field==0?"0000":"00"));
+    u8g2_DrawHLine(&m1_u8g2,8+u8g2_GetStrWidth(&m1_u8g2,prefix),field<3?29:48,u8g2_GetStrWidth(&m1_u8g2,field==0?"0000":"00"));
 
-    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Cancel", "Field", arrowright_8x8);
+    m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Save", button_ok_8x8);
     m1_u8g2_nextpage();
 }
 
@@ -392,6 +402,7 @@ void settings_set_time(void)
     S_M1_Main_Q_t q_item;
     BaseType_t ret;
     m1_time_t dt;
+    bool dirty=false;
     uint8_t field = 0;   /* 0=Year 1=Month 2=Day 3=Hour 4=Min 5=Sec */
 
     m1_get_localtime(&dt);
@@ -415,10 +426,14 @@ void settings_set_time(void)
         ret = xQueueReceive(button_events_q_hdl, &this_button_status, 0);
         if (ret != pdTRUE) continue;
 
+        bool commit=this_button_status.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK;
         if (this_button_status.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK)
         {
-            xQueueReset(main_q_hdl);
-            return;  /* cancel */
+            if(!dirty){xQueueReset(main_q_hdl);return;}
+            uint8_t choice=m1_message_box_choice(&m1_u8g2,"Save time changes?","Save the edited time?","Back keeps editing","Save\nDiscard");
+            if(choice==1)commit=true;
+            else if(choice==2){xQueueReset(main_q_hdl);return;}
+            else {settings_set_time_draw(&dt,field);continue;}
         }
 
         /* Left/Right — move field */
@@ -457,6 +472,8 @@ void settings_set_time(void)
             }
         }
 
+        if(this_button_status.event[BUTTON_UP_KP_ID]==BUTTON_EVENT_CLICK || this_button_status.event[BUTTON_DOWN_KP_ID]==BUTTON_EVENT_CLICK)dirty=true;
+
         /* Clamp day after month/year change */
         {
             uint8_t max_day = settings_dim(dt.year, dt.month);
@@ -464,10 +481,14 @@ void settings_set_time(void)
         }
 
         /* OK — commit and save */
-        if (this_button_status.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK)
+        if (commit)
         {
             if(!m1_set_localtime(&dt)) {m1_message_box(&m1_u8g2,"Clock not saved","RTC write failed or","date is out of range","OK");settings_set_time_draw(&dt,field);continue;}
             m1_buzzer_notification();
+            char summary[32];
+            if(m1_ui.clock_12h)snprintf(summary,sizeof(summary),"%02u:%02u %s",(dt.hour+11)%12+1,dt.minute,dt.hour<12?"AM":"PM");
+            else snprintf(summary,sizeof(summary),"%02u:%02u",dt.hour,dt.minute);
+            m1_message_box(&m1_u8g2,"Time saved",summary,"OK to return","OK");
             xQueueReset(main_q_hdl);
             return;
         }
@@ -479,20 +500,18 @@ void settings_set_time(void)
 
 /*============================================================================*/
 /**
-  * @brief  System settings — two-item menu: ESP32 auto-init + Set Time
+  * @brief  Device options: ESP32 auto-init
   */
 /*============================================================================*/
 
-#define SYS_MENU_ITEMS   2
+#define SYS_MENU_ITEMS   1
 #define SYS_ITEM_ESP32   0
-#define SYS_ITEM_TIME    1
+
 
 static void settings_system_draw(uint8_t sel)
 {
     const char *label0 = "ESP32 at boot";
     const char *val0   = m1_esp32_auto_init ? "ON" : "OFF";
-    const char *label1 = "Set Time";
-    const char *val1   = ">";
 
     char badge[8];
     snprintf(badge, sizeof(badge), "%u/%u", (unsigned)(sel + 1U), (unsigned)SYS_MENU_ITEMS);
@@ -504,8 +523,7 @@ static void settings_system_draw(uint8_t sel)
     u8g2_SetFont(&m1_u8g2, M1_DISP_SUB_MENU_FONT_N);
 
     struct { const char *lbl; const char *val; } items[SYS_MENU_ITEMS] = {
-        { label0, val0 },
-        { label1, val1 }
+        { label0, val0 }
     };
 
     uint8_t visible_start = (sel >= 2U) ? (uint8_t)(sel - 1U) : 0U;
@@ -586,11 +604,7 @@ void settings_system(void)
                 settings_save_to_sd();
                 needs_redraw = 1;
             }
-            else if (sel == SYS_ITEM_TIME)
-            {
-                settings_set_time();
-                needs_redraw = 1;
-            }
+
         }
     }
 }
@@ -713,78 +727,94 @@ static void settings_about_display_choice(uint8_t choice)
   * @brief  Save user settings to SD card (0:/System/settings.cfg)
   */
 /*============================================================================*/
-void settings_save_to_sd(void)
+bool settings_save_to_sd(void)
 {
     FIL fp;
     FRESULT fres;
     UINT bw;
     char buf[64];
 
+    bool ok = true;
     /* Ensure System directory exists */
     f_mkdir("0:/System");
 
-    fres = f_open(&fp, SETTINGS_FILE_PATH, FA_WRITE | FA_CREATE_ALWAYS);
+    fres = f_open(&fp, SETTINGS_FILE_PATH ".tmp", FA_WRITE | FA_CREATE_ALWAYS);
     if (fres != FR_OK)
     {
         M1_LOG_W(SETTINGS_TAG, "Save failed (err=%d)\r\n", fres);
-        return;
+        return false;
     }
 
     snprintf(buf, sizeof(buf), "brightness=%d\n", m1_brightness_level);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "buzzer=%d\n", m1_buzzer_on);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "led_notify=%d\n", m1_led_notify_on);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "orientation=%d\n", m1_screen_orientation);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "sleep_timeout=%d\n", m1_sleep_timeout_idx);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "esp32_auto_init=%d\n", m1_esp32_auto_init);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "tz_offset=%d\n", m1_tz_offset_hours);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "ism_region=%d\n", m1_device_stat.config.ism_band_region);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "backlight_type=%d\n", m1_backlight_type);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
     snprintf(buf, sizeof(buf), "rgb_mode=%d\n", (int)rgb_bl_get_mode());
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
     snprintf(buf, sizeof(buf), "rgb_effect=%d\n", (int)rgb_bl_get_effect());
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
     snprintf(buf, sizeof(buf), "rgb_brightness=%d\n", (int)rgb_bl_get_brightness());
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
     {
         uint8_t cr, cg, cb;
         rgb_bl_get_custom(&cr, &cg, &cb);
         snprintf(buf, sizeof(buf), "rgb_custom=%d,%d,%d\n", (int)cr, (int)cg, (int)cb);
-        f_write(&fp, buf, strlen(buf), &bw);
+        if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
     }
     snprintf(buf, sizeof(buf), "rgb_reactive=%d\n", (int)rgb_bl_reactive_is_on());
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 
 #ifdef M1_APP_BADBT_ENABLE
     snprintf(buf, sizeof(buf), "badbt_name=%s\n", m1_badbt_name);
-    f_write(&fp, buf, strlen(buf), &bw);
+    if (ok) ok = f_write(&fp, buf, strlen(buf), &bw) == FR_OK && bw == strlen(buf);
 #endif
 
     /* Empty when the built-in US layout is active */
     {
         char kb_buf[KB_LAYOUT_PATH_MAX + 16];
         snprintf(kb_buf, sizeof(kb_buf), "kb_layout=%s\n", kb_layout_path());
-        f_write(&fp, kb_buf, strlen(kb_buf), &bw);
+        if (ok) ok = f_write(&fp, kb_buf, strlen(kb_buf), &bw) == FR_OK && bw == strlen(kb_buf);
     }
 
-    f_close(&fp);
+    if (ok) ok = f_sync(&fp) == FR_OK;
+    FRESULT closed = f_close(&fp);
+    if (!ok || closed != FR_OK) return false;
+    FILINFO info;
+    fres = f_stat(SETTINGS_FILE_PATH, &info);
+    if (fres == FR_OK) {
+        fres = f_unlink(SETTINGS_FILE_PATH ".bak");
+        if (fres != FR_OK && fres != FR_NO_FILE) return false;
+    } else if (fres != FR_NO_FILE) return false;
+    fres = f_rename(SETTINGS_FILE_PATH, SETTINGS_FILE_PATH ".bak");
+    if (fres != FR_OK && fres != FR_NO_FILE) return false;
+    if (f_rename(SETTINGS_FILE_PATH ".tmp", SETTINGS_FILE_PATH) != FR_OK) {
+        if (fres == FR_OK) f_rename(SETTINGS_FILE_PATH ".bak", SETTINGS_FILE_PATH);
+        return false;
+    }
+    return true;
 }
 
 
@@ -805,6 +835,7 @@ void settings_load_from_sd(void)
     int val;
 
     fres = f_open(&fp, SETTINGS_FILE_PATH, FA_READ);
+    if (fres == FR_NO_FILE) fres = f_open(&fp, SETTINGS_FILE_PATH ".bak", FA_READ);
     if (fres != FR_OK)
         goto apply;  /* No settings file yet — apply defaults */
 
@@ -998,8 +1029,9 @@ void settings_load_from_sd(void)
     }
 
 apply:
-    /* Apply backlight */
-    m1_backlight_on(s_brightness_values[m1_brightness_level]);
+    /* Settings are ready before any splash or wake restores the light. */
+    s_backlight_ready = true;
+    settings_restore_backlight();
 
     /* If RGB type selected, init the RGB hardware */
     if (m1_backlight_type == 1)

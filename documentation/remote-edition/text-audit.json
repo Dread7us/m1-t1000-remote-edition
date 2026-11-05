@@ -1,5 +1,5 @@
 {
-  "scope": "Application C modules; direct text draws captured by the edition drawing hook, plus shared bounded-label capture",
+  "scope": "Static inventory of direct text drawing in application C modules; not runtime capture or complete layout certification",
   "modules": [
     {
       "module": "m1_csrc/app_dab_timer.c",

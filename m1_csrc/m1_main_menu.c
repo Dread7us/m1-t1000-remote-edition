@@ -71,12 +71,12 @@ static S_M1_Menu_t menu_Startup_Splash =
 
 static S_M1_Menu_t menu_Appearance = {"Appearance", settings_appearance, NULL, NULL, 0, 0, NULL, NULL, {NULL}};
 
-static S_M1_Menu_t menu_Read_Text = {"Read screen text", m1_text_history, NULL, NULL, 0, 0, NULL, NULL, {NULL}};
+static S_M1_Menu_t menu_Date_Time = {"Date & Time", settings_set_time, NULL, NULL, 0, 0, NULL, NULL, {NULL}};
 
 static S_M1_Menu_t menu_System =
 {
     "System", NULL, NULL, NULL, 9, 0, menu_m1_icon_setting, NULL,
-    {&menu_Appearance, &menu_Read_Text, &menu_Settings_Backlight, &menu_Settings_LCD_and_Notifications, &menu_Settings_System,
+    {&menu_Appearance, &menu_Date_Time, &menu_Settings_Backlight, &menu_Settings_LCD_and_Notifications, &menu_Settings_System,
      &menu_Setting_Firmware_Update, &menu_Setting_ESP32,
      &menu_Settings_About, &menu_Startup_Splash}
 };

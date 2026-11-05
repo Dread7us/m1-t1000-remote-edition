@@ -6,25 +6,14 @@
 #include <string.h>
 #include <ctype.h>
 
-#define TEXT_SLOTS 8
 #define TEXT_LENGTH 512
-static char history[TEXT_SLOTS][TEXT_LENGTH+1];
-static unsigned history_count,history_next;
-static bool reading;
 static uint32_t scroll_start;
 static char dialog_body[TEXT_LENGTH*2+2];
 
 void m1_text_reset_scroll(void) {scroll_start=HAL_GetTick();}
-void m1_ui_capture_text(u8g2_t *display,const char *text,unsigned width) {
-    if(reading || !text || !width || u8g2_GetStrWidth(display,text)<=width)return;
-    for(unsigned i=0;i<history_count;++i)if(!strcmp(history[i],text))return;
-    snprintf(history[history_next],sizeof(history[0]),"%s",text);
-    history_next=(history_next+1)%TEXT_SLOTS;if(history_count<TEXT_SLOTS)++history_count;
-}
 void m1_draw_marquee(u8g2_t *display,int x,int y,int width,const char *text) {
     if(!text || width<=0)return;
     if(u8g2_GetStrWidth(display,text)<=width){m1_draw_text(display,x,y,width,text,TEXT_ALIGN_LEFT);return;}
-    m1_ui_capture_text(display,text,(unsigned)width);
     size_t len=strlen(text),tail=len;char window[TEXT_LENGTH+1];
     /* Determine the final character-aligned window that fits. */
     while(tail && u8g2_GetStrWidth(display,text+tail-1)<=width)--tail;
@@ -65,7 +54,7 @@ static void draw_page(u8g2_t *display,const char *text,unsigned page) {
     }
 }
 uint8_t m1_text_dialog(u8g2_t *display,const char *title,const char *line1,const char *line2,const char *buttons) {
-    bool previous=reading;reading=true;unsigned page=0,cursor=0;
+    unsigned page=0,cursor=0;
     snprintf(dialog_body,sizeof(dialog_body),"%s%s%s",line1?line1:"",line1&&line2&&line1[0]&&line2[0]?"\n":"",line2?line2:"");
     unsigned count=buttons?u8x8_GetStringLineCnt(buttons):0;
     m1_text_reset_scroll();
@@ -90,19 +79,12 @@ uint8_t m1_text_dialog(u8g2_t *display,const char *title,const char *line1,const
         S_M1_Main_Q_t event;S_M1_Buttons_Status key;
         if(xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(120))!=pdTRUE || event.q_evt_type!=Q_EVENT_KEYPAD)continue;
         if(xQueueReceive(button_events_q_hdl,&key,0)!=pdTRUE)continue;
-        if(key.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK){xQueueReset(main_q_hdl);xQueueReset(button_events_q_hdl);reading=previous;return 0;}
-        if(key.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK){xQueueReset(main_q_hdl);xQueueReset(button_events_q_hdl);reading=previous;return count?(uint8_t)(cursor+1):1;}
+        if(key.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK){xQueueReset(main_q_hdl);xQueueReset(button_events_q_hdl);return 0;}
+        if(key.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK){xQueueReset(main_q_hdl);xQueueReset(button_events_q_hdl);return count?(uint8_t)(cursor+1):1;}
         if(key.event[BUTTON_UP_KP_ID]==BUTTON_EVENT_CLICK){if(pages>1)page=page?page-1:pages-1;else if(count)cursor=cursor?cursor-1:count-1;}
         if(key.event[BUTTON_DOWN_KP_ID]==BUTTON_EVENT_CLICK){if(pages>1)page=(page+1)%pages;else if(count)cursor=(cursor+1)%count;}
         if(key.event[BUTTON_LEFT_KP_ID]==BUTTON_EVENT_CLICK && count)cursor=cursor?cursor-1:count-1;
         if(key.event[BUTTON_RIGHT_KP_ID]==BUTTON_EVENT_CLICK && count)cursor=(cursor+1)%count;
         m1_text_reset_scroll();
     }
-}
-void m1_text_history(void) {
-    if(!history_count){m1_text_dialog(&m1_u8g2,"Read screen text","No overflowing text has","been recorded yet.",NULL);return;}
-    bool previous=reading;reading=true;
-    /* Newest entry first; browsing a modal cannot replace the saved history. */
-    for(unsigned i=0;i<history_count;++i){unsigned slot=(history_next+TEXT_SLOTS-1-i)%TEXT_SLOTS;char title[48];snprintf(title,sizeof(title),"Saved text %u/%u",i+1,history_count);if(!m1_text_dialog(&m1_u8g2,title,history[slot],"",NULL))break;}
-    reading=previous;
 }

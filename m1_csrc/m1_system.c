@@ -27,6 +27,7 @@
 #include "m1_fw_update_bl.h"
 #include "m1_lp5814.h"
 #include "m1_rgb_backlight.h"
+#include "m1_settings.h"
 #include "battery.h"
 
 /*************************** D E F I N E S ************************************/
@@ -623,8 +624,6 @@ static const uint32_t s_sleep_timeout_ms[] = {
     0        /* 5: Never (0 = disabled) */
 };
 
-/* Brightness values indexed by m1_brightness_level */
-static const uint8_t s_brightness_values[] = { 0, 64, 128, 192, 255 };
 
 static void lcd_saver_update(void)
 {
@@ -642,7 +641,7 @@ static void lcd_saver_update(void)
 	{
 		if (saver_mode)
 		{
-			m1_backlight_on(s_brightness_values[m1_brightness_level]);
+			settings_restore_backlight();
 			saver_mode = 0;
 		}
 		return;
@@ -653,7 +652,7 @@ static void lcd_saver_update(void)
 	{
 		if ( delta < timeout ) /* Keypad is active? */
 		{
-			m1_backlight_on(s_brightness_values[m1_brightness_level]);
+			settings_restore_backlight();
 			saver_mode = 0;
 		}
 	}
@@ -958,7 +957,7 @@ void startup_info_screen_display(const char *scr_text)
 		}
 	} while (u8g2_NextPage(&m1_u8g2));
 
-	m1_backlight_on(M1_BACKLIGHT_BRIGHTNESS);
+	settings_restore_backlight();
 
 	m1_device_stat.op_mode = M1_OPERATION_MODE_DISPLAY_ON; // update new state
 	m1_device_stat.active_timestamp = HAL_GetTick(); // reset timeout
