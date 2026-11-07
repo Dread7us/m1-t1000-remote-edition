@@ -58,8 +58,8 @@ volatile uint8_t ir_ota_data_tx_active;
 uint16_t ir_ota_data_tx_len;
 volatile uint16_t ir_ota_data_tx_counter;
 uint16_t *pir_ota_data_tx_buffer;
-static TimerHandle_t ir_tx_timer_hdl = NULL;
-static volatile bool ir_tx_delay_done;
+static TickType_t ir_tx_delay_start;
+static TickType_t ir_tx_delay_ticks;
 
 static IRMP_DATA 			irmp_loopback_data;
 static uint8_t				new_remote_learned;
@@ -78,7 +78,7 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init);
  * custom-remote learn flow can reuse the IR receiver setup/teardown). */
 void infrared_encode_sys_init(void);
 void infrared_encode_sys_deinit(void);
-static void infrared_encode_timer_cb(TimerHandle_t xTimer);
+
 
 #ifdef M1_APP_FILE_IMPORT_ENABLE
 static bool ir_find_next_filename(char *path, size_t path_size);
@@ -123,7 +123,6 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 	static uint32_t ir_delay_time;
 	static S_M1_IR_Tx_States ir_tx_state = IR_TX_INIT;
 	uint16_t wtemp;
-	BaseType_t ret;
 
 	if (init)
 	{
@@ -175,24 +174,14 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 					}// if ( wtemp==TRUE )
 					else // Let do a delay with the delay time given in the return value
 					{
-						ir_delay_time = wtemp;
-						ir_delay_time /= 1000; // Convert delay time from us to ms
-						ret = pdFAIL;
-						if ( ir_delay_time ) // Valid delay time?
-						{
-							// Create the one shot timer for the delay
-							ir_tx_delay_done = false;
-                            ir_tx_timer_hdl = xTimerCreate( "Ir_Tx_Delay_Once", pdMS_TO_TICKS(ir_delay_time), pdFALSE, 0, infrared_encode_timer_cb);
-							if( ir_tx_timer_hdl != NULL )
-							{
-								ret = xTimerStart( ir_tx_timer_hdl, 0 );
-                                if (ret == pdPASS) ir_tx_state = IR_TX_DELAY;
-							} // if( ( ir_tx_timer_hdl != NULL )
-						} // if ( ir_delay_time )
-						if (ret!=pdPASS) // Not a valid delay time or timer fails, just finish
-						{
-							ir_tx_state = IR_TX_COMPLETED;
-						} // if (ret!=pdPASS)
+                        /* Deadline polling cannot block the shared timer daemon or
+                         * lose a completion notification when the UI queue is full.
+                         * Generator returns delay microseconds plus TRUE. Round up. */
+                        ir_delay_time = ((uint32_t)wtemp - TRUE + 999U) / 1000U;
+                        ir_tx_delay_ticks = pdMS_TO_TICKS(ir_delay_time);
+                        if (!ir_tx_delay_ticks) ir_tx_delay_ticks = 1;
+                        ir_tx_delay_start = xTaskGetTickCount();
+                        ir_tx_state = IR_TX_DELAY;
 					} // else
 				} // if ( wtemp )
 				else // Task is complete. Let finish.
@@ -212,9 +201,8 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 				break;
 
             case IR_TX_DELAY:
-                if (ir_tx_delay_done) {
-                    if (ir_tx_timer_hdl != NULL) {xTimerDelete(ir_tx_timer_hdl,0);ir_tx_timer_hdl=NULL;}
-                    ir_tx_delay_done=false;ir_tx_state=IR_TX_INIT;continue;
+                if ((TickType_t)(xTaskGetTickCount() - ir_tx_delay_start) >= ir_tx_delay_ticks) {
+                    ir_tx_state=IR_TX_INIT;continue;
                 }
                 break;
 
@@ -471,7 +459,7 @@ void infrared_saved_remotes(void)
 		// This task is the sub-task of subfunc_handler_task.
 		// The notification is given in the form of an item in the main queue.
 		// So let read the main queue.
-		ret = xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY);
+		ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(2));
 		if (ret==pdTRUE)
 		{
 			if ( q_item.q_evt_type==Q_EVENT_KEYPAD )
@@ -641,6 +629,13 @@ static bool ir_save_learned_signal(const IRMP_DATA *data)
 /*============================================================================*/
 void infrared_decode_sys_init(void)
 {
+    HAL_NVIC_DisableIRQ(IR_DECODE_TIMER_IRQn);
+    IR_DECODE_TIMER_CLK();
+    __HAL_RCC_TIM2_FORCE_RESET();
+    __HAL_RCC_TIM2_RELEASE_RESET();
+    memset(&Timerhdl_IrRx, 0, sizeof(Timerhdl_IrRx));
+    HAL_NVIC_ClearPendingIRQ(IR_DECODE_TIMER_IRQn);
+    IrRx_Edge_Det = EDGE_DET_IDLE;
 	GPIO_InitTypeDef gpio_init_struct = {0};
 	TIM_IC_InitTypeDef tim_ic_init = {0};
 	TIM_MasterConfigTypeDef tim_master_conf = {0};
@@ -755,7 +750,6 @@ void infrared_decode_sys_init(void)
 		Error_Handler();
 	}
 
-	IrRx_Edge_Det = EDGE_DET_IDLE;
 } // static void infrared_decode_sys_init(void)
 
 
@@ -768,6 +762,13 @@ void infrared_decode_sys_init(void)
 /*============================================================================*/
 void infrared_decode_sys_deinit(void)
 {
+    HAL_NVIC_DisableIRQ(IR_DECODE_TIMER_IRQn);
+    HAL_TIM_IC_Stop_IT(&Timerhdl_IrRx, IR_DECODE_TIMER_RX_CHANNEL);
+    __HAL_TIM_DISABLE_IT(&Timerhdl_IrRx, TIM_IT_UPDATE);
+    __HAL_TIM_DISABLE(&Timerhdl_IrRx);
+    __HAL_TIM_CLEAR_FLAG(&Timerhdl_IrRx, TIM_FLAG_UPDATE | TIM_FLAG_CC4 | TIM_FLAG_CC4OF);
+    HAL_NVIC_ClearPendingIRQ(IR_DECODE_TIMER_IRQn);
+    IrRx_Edge_Det = EDGE_DET_IDLE;
 	HAL_TIM_IC_DeInit(&Timerhdl_IrRx);
 
 	IR_DECODE_TIMER_CLK_DIS();
@@ -793,8 +794,7 @@ void infrared_encode_sys_init(void)
 {
     /* A fresh peripheral boundary for every parsed/raw send, including wake. */
     HAL_NVIC_DisableIRQ(IR_ENCODE_TIMER_IRQn);
-    if (ir_tx_timer_hdl != NULL) {xTimerDelete(ir_tx_timer_hdl,0);ir_tx_timer_hdl=NULL;}
-    ir_tx_delay_done = false;
+    ir_tx_delay_start = ir_tx_delay_ticks = 0;
     ir_ota_data_tx_active = FALSE;
     IR_ENCODE_CARRIER_TIMER_CLK();
     IR_ENCODE_BASEBAND_TIMER_CLK();
@@ -931,7 +931,6 @@ void infrared_encode_sys_deinit(void)
     HAL_NVIC_DisableIRQ(IR_ENCODE_TIMER_IRQn);
     ir_ota_data_tx_active = FALSE;
     HAL_NVIC_ClearPendingIRQ(IR_ENCODE_TIMER_IRQn);
-	BaseType_t ret;
 	GPIO_InitTypeDef gpio_init_struct = {0};
 
 	gpio_init_struct.Pin = IR_DRV_Pin;
@@ -952,35 +951,10 @@ void infrared_encode_sys_deinit(void)
 
 	HAL_NVIC_DisableIRQ(IR_ENCODE_TIMER_IRQn);
 
-	if( ir_tx_timer_hdl != NULL )
-	{
-		ret = xTimerDelete(ir_tx_timer_hdl, 0);
-		assert_param(ret==pdPASS);
-		ir_tx_timer_hdl = NULL;
-	}
+    ir_tx_delay_start = ir_tx_delay_ticks = 0;
 
 	if ( main_q_hdl != NULL)
 		xQueueReset(main_q_hdl);
 
 	//HAL_GPIO_DeInit(IR_GPIO_PORT, IR_TX_GPIO_PIN);
 } // void infrared_encode_sys_deinit(void)
-
-
-
-/*============================================================================*/
-/**
-  * This is a callback function for the software timer
-  * It's used as a delay function for the Tx task
-  *
-  */
-/*============================================================================*/
-static void infrared_encode_timer_cb(TimerHandle_t xTimer)
-{
-    if (xTimer != ir_tx_timer_hdl) return;
-    ir_tx_delay_done = true;
-	S_M1_Main_Q_t q_item;
-
-	q_item.q_data.ir_tx_data = 1; // any value, not used
-	q_item.q_evt_type = Q_EVENT_IRRED_TX;
-	xQueueSend(main_q_hdl, &q_item, portMAX_DELAY);
-} // static void infrared_encode_timer_cb(TimerHandle_t xTimer)

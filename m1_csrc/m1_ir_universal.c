@@ -1125,7 +1125,11 @@ static void show_remote_grid(const char *title, uint16_t *selection)
     xQueueReset(main_q_hdl);
     draw_remote_grid(title, cursor);
     for (;;) {
-        if (xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(50)) != pdTRUE) {
+        if (s_remote_tx_started && (remote_tx_finished() || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
+            remote_tx_stop();
+            draw_remote_grid(title, cursor);
+        }
+        if (xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(s_remote_tx_started ? 1 : 50)) != pdTRUE) {
             if (s_remote_tx_started && (remote_tx_finished() || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
                 remote_tx_stop();
                 draw_remote_grid(title, cursor);
@@ -1213,7 +1217,7 @@ static void show_commands(const char *ir_file_path)
 
 	while (1)
 	{
-		ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(50));
+		ret = xQueueReceive(main_q_hdl, &q_item, pdMS_TO_TICKS(s_remote_tx_started ? 1 : 50));
 		if (s_remote_tx_started && (remote_tx_finished() || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
 			remote_tx_stop();
 			draw_commands(title, selection);
@@ -1379,7 +1383,7 @@ void ir_universal_play_file(const char *path)
 		while (!remote_tx_finished() &&
 		       (xTaskGetTickCount() - t0) < pdMS_TO_TICKS(5000))
 		{
-			xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(20));
+			xQueueReceive(main_q_hdl, &q, pdMS_TO_TICKS(1));
 		}
 		remote_tx_stop();   /* forces carrier off + deinits timers */
 	}
@@ -1588,6 +1592,8 @@ static void ir_power_blast(const char *title, const char *const *paths, uint8_t 
 
 			m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_M, LED_FASTBLINK_ONTIME_M);
 
+			remote_tx_stop();
+            s_remote_tx_raw = s_commands[i].is_raw;
 			/* Transmit this code (mirrors transmit_command()'s parsed-signal path) */
 			if (s_commands[i].is_raw)
 			{
@@ -1600,21 +1606,35 @@ static void ir_power_blast(const char *title, const char *const *paths, uint8_t 
 				s_tx_irmp_data.command  = s_commands[i].command;
 				s_tx_irmp_data.flags    = s_commands[i].flags;
 
+                s_remote_tx_started = true;
+                s_remote_tx_tick = xTaskGetTickCount();
 				infrared_encode_sys_init();
 				irsnd_generate_tx_data(s_tx_irmp_data);
 				infrared_transmit(1);
 				infrared_transmit(0);
 			}
 
-			sent++;
-			/* Let the frame finish before sending the next code */
-			vTaskDelay(pdMS_TO_TICKS(220));
+            /* Pump the complete protocol, including automatic frames and gaps.
+             * A fixed sleep only sends the first hardware frame. */
+            bool started = s_remote_tx_started;
+            TickType_t began = xTaskGetTickCount();
+            while (started && !remote_tx_finished()) {
+                if (xTaskGetTickCount() - began >= pdMS_TO_TICKS(5000)) {aborted=true;break;}
+                if (xQueueReceive(main_q_hdl,&q_item,pdMS_TO_TICKS(1)) == pdTRUE && q_item.q_evt_type == Q_EVENT_KEYPAD &&
+                    xQueueReceive(button_events_q_hdl,&this_button_status,0) == pdTRUE &&
+                    (this_button_status.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK || this_button_status.event[BUTTON_LEFT_KP_ID] == BUTTON_EVENT_CLICK)) {
+                    aborted=true;break;
+                }
+            }
+            remote_tx_stop();
+            if (aborted) break;
+            if (started) sent++;
+            vTaskDelay(pdMS_TO_TICKS(100));
 		}
 	}
 
 	m1_led_fast_blink(LED_BLINK_ON_RGB, LED_FASTBLINK_PWM_OFF, LED_FASTBLINK_ONTIME_OFF);
-	if (any)
-		infrared_encode_sys_deinit();
+    remote_tx_stop();
 
 	if (!any)
 	{
@@ -2112,7 +2132,7 @@ m1_action_result_t ir_automation_send(const char *path,uint16_t index,m1_action_
     while (xTaskGetTickCount()-start<pdMS_TO_TICKS(5000)) {
         S_M1_Main_Q_t event;
         if (cancel && cancel()) {result=ACTION_CANCELLED;break;}
-        xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(20));
+        xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(1));
         if (remote_tx_finished()) {result=ACTION_OK;break;}
     }
     remote_tx_stop();

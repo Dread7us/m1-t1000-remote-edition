@@ -568,8 +568,10 @@ typedef int BaseType_t;typedef int TimerHandle_t;
 typedef struct {unsigned ARR,SR;} Registers;
 typedef struct {Registers *Instance;} Timer;
 static Registers regs;static Timer Timerhdl_IrTx={&regs};
-static unsigned stage,created,deleted,post;static TimerHandle_t ir_tx_timer_hdl;
-static bool ir_tx_delay_done;static bool ir_ota_data_tx_active;
+typedef uint32_t TickType_t;
+static unsigned stage,post;static TickType_t ticks,ir_tx_delay_start,ir_tx_delay_ticks;
+static bool ir_ota_data_tx_active;
+static TickType_t xTaskGetTickCount(void){return ticks;}
 static uint16_t ir_ota_data_tx_counter,ir_ota_data_tx_len,*pir_ota_data_tx_buffer;
 static uint16_t samples[]={100,201,100};
 #define TRUE 1
@@ -594,18 +596,16 @@ static void HAL_TIM_GenerateEvent(Timer *h,int e){(void)h;(void)e;}
 static void irsnd_on(void){}
 static uint8_t irsnd_tx_protocol(void){return 0x44;}
 static void m1_ir_ota_frame_post_process(unsigned protocol){assert(protocol==0x44);++post;}
-static void infrared_encode_timer_cb(int t){(void)t;}
-static int xTimerCreate(const char *n,unsigned t,int a,int b,void (*f)(int)){(void)n;(void)a;(void)b;(void)f;assert(t==2);++created;return 7;}
-static int xTimerStart(int t,int w){(void)w;assert(t==7);return 1;}
-static int xTimerDelete(int t,int w){(void)w;assert(t==7);++deleted;return 1;}
 """+machine+r"""
-int main(void){for(unsigned command=0;command<1000;++command){stage=created=deleted=post=0;ir_tx_timer_hdl=0;ir_tx_delay_done=false;ir_ota_data_tx_active=false;
+int main(void){for(unsigned command=0;command<1000;++command){stage=post=0;ticks=command%2?UINT32_MAX-1:100;ir_ota_data_tx_active=false;
  infrared_transmit(1);assert(infrared_transmit(0)==IR_TX_ACTIVE&&ir_ota_data_tx_active);
- ir_ota_data_tx_active=false;assert(infrared_transmit(0)==IR_TX_DELAY&&created==1&&post==1);
- for(int i=0;i<20;++i)assert(infrared_transmit(0)==IR_TX_DELAY&&created==1);
- ir_tx_delay_done=true;assert(infrared_transmit(0)==IR_TX_ACTIVE&&deleted==1);
+ ir_ota_data_tx_active=false;assert(infrared_transmit(0)==IR_TX_DELAY&&post==1);
+ for(int i=0;i<20;++i)assert(infrared_transmit(0)==IR_TX_DELAY&&stage==2);
+ ticks++;assert(infrared_transmit(0)==IR_TX_DELAY);
+ ticks++;assert(infrared_transmit(0)==IR_TX_ACTIVE);
  ir_ota_data_tx_active=false;assert(infrared_transmit(0)==IR_TX_COMPLETED&&post==2&&stage==4);
- }puts("PASS: actual parsed IR state machine completes both frames and delay, uses TX protocol, creates/deletes each delay timer once across 1000 consecutive commands");return 0;}
+ }puts("PASS: actual parsed IR state machine completes both frames and gap without timer allocation or queue notifications across 1000 commands, including tick rollover");return 0;}
+
 """
 (out/'ir-frames.c').write_text(machine_test);exe=compile('ir-frames',[out/'ir-frames.c']);print(run([exe]))
 
@@ -853,6 +853,23 @@ assert 'm1_backlight_on(192)' not in (src/'m1_sys_init.c').read_text()
 assert 'SETTINGS_FILE_PATH ".bak", FA_READ' in settings
 stock=(src/'app_stock_backlight.c').read_text()
 assert stock.count('if (!settings_save_to_sd())')==4
+
+
+blast=(repo/'tools/remote_edition/power_blast_prelude.h').read_text()+'\n'+function_body(code,'static void ir_power_blast(const char *title, const char *const *paths, uint8_t n_paths)')+r"""
+int main(void){const char *paths[]={"test.ir"};
+ ir_power_blast("Test",paths,1);assert(starts==2&&completed==2&&stops==2&&!s_remote_tx_started);
+ starts=completed=stops=phase=ticks=0;mode=1;ir_power_blast("Timeout",paths,1);assert(starts==1&&completed==0&&stops==1&&!s_remote_tx_started&&ticks>=5000);
+ starts=completed=stops=phase=ticks=0;mode=2;ir_power_blast("Cancel",paths,1);assert(starts==1&&stops==1&&!s_remote_tx_started&&ticks<5000);
+ puts("PASS: actual power-blast workflow waits for full parsed/raw completion, cleans up each action, and handles timeout/cancellation without starting another signal");return 0;}
+"""
+(out/'power-blast.c').write_text(blast);exe=compile('power-blast',[out/'power-blast.c']);print(run([exe]))
+assert 'xTimer' not in infrared
+assert 'free(pir_ota_data_tx_buffer)' not in (src/'m1_cli.c').read_text(encoding='utf8')
+rxinit=function_body(infrared,'void infrared_decode_sys_init(void)')
+rxstop=function_body(infrared,'void infrared_decode_sys_deinit(void)')
+assert rxinit.index('EDGE_DET_IDLE')<rxinit.index('HAL_TIM_IC_Start_IT')
+assert rxstop.index('HAL_NVIC_DisableIRQ')<rxstop.index('HAL_TIM_IC_DeInit')
+assert 'HAL_NVIC_ClearPendingIRQ' in rxstop and '__HAL_RCC_TIM2_FORCE_RESET' in rxinit
 
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

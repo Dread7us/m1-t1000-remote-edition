@@ -45,6 +45,10 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Infrared timing and switching
+
+**Revision 12 · Built and native-tested; device check pending.** Universal power playback now waits for complete protocols rather than a fixed sleep. IR inter-frame gaps use clock deadlines without blocking the shared timer service. Receiver entry/exit resets stale timer and interrupt state, and the diagnostic transmitter no longer frees static timing storage. [Corrections and test coverage](documentation/remote-edition/ir-services.md).
+
 ## Saved settings and a cleaner System menu
 
 **Revision 11:** backlight changes save immediately and stay consistent on the splash/home screen and after restarting. **System → Date & Time** offers an explicit **OK Save**, unsaved-change choices, and a **Time saved** confirmation. The nested settings panel is now **Device options**; the separate text-history viewer has been removed. [Brightness persistence and validation](documentation/remote-edition/backlight.md).

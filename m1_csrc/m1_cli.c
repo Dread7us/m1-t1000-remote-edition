@@ -658,44 +658,16 @@ void cmd_m1_mtest_infrared(char *pconsole, char *input_params[], uint8_t n_param
     		infrared_encode_sys_init();
     		irsnd_generate_tx_data(irmp_data); // make ota data
     		infrared_transmit(1); // initialize the tx
-    		force_quit = 0;
-
-    		while (1 )
-    		{
-    			// Wait for the notification from button_event_handler_task to subfunc_handler_task.
-    			// This task is the sub-task of subfunc_handler_task.
-    			// The notification is given in the form of an item in the main queue.
-    			// So let read the main queue.
-    			ret = pdFALSE;
-    			force_quit = 0;
-    			q_item.q_evt_type = 0;
-    			if ( infrared_transmit(0)==IR_TX_ACTIVE ) // Transmit with no error?
-    			{
-    				// ret = xQueueReceive(main_q_hdl, &q_item, portMAX_DELAY);
-    				while ( ir_ota_data_tx_active )
-    					;
-    				ret = pdTRUE;
-    				q_item.q_evt_type = Q_EVENT_IRRED_TX;
-    			}
-    			else
-    				force_quit = 1;
-    			if (ret==pdTRUE || force_quit)
-    			{
-    				if ( q_item.q_evt_type==Q_EVENT_IRRED_TX || force_quit ) // Transmit completed?
-    				{
-    					if ( infrared_transmit(0)==IR_TX_ACTIVE ) // There's still repeated packet to transmit?
-    						continue; // Let repeat
-
-    					if ( pir_ota_data_tx_buffer!=NULL )
-							free(pir_ota_data_tx_buffer);
-
-						infrared_encode_sys_deinit();
-
-						xQueueReset(main_q_hdl); // Reset main q before return
-						break;
-    				} // if ( q_item.q_evt_type==Q_EVENT_IRRED_TX || force_quit )
-    			} // if (ret==pdTRUE || force_quit)
-    		} // while (1 )
+            /* Advance every frame and protocol gap without starving the tick.
+             * The encoder owns its static OTA storage; never free that pointer. */
+            TickType_t ir_started = xTaskGetTickCount();
+            while (infrared_transmit(0) != IR_TX_COMPLETED &&
+                   xTaskGetTickCount() - ir_started < pdMS_TO_TICKS(5000))
+                vTaskDelay(pdMS_TO_TICKS(1));
+            bool ir_done = infrared_transmit(0) == IR_TX_COMPLETED;
+            infrared_encode_sys_deinit();
+            xQueueReset(main_q_hdl);
+            if (!ir_done) {strcpy(pconsole, "Error: IR transmit timed out!\r\n");break;}
     		strcpy(pconsole, "Transmit completed!\r\n");
     		break;
 
