@@ -509,8 +509,8 @@ void HAL_TIM_PeriodElapsedCallback_IR(TIM_HandleTypeDef *htim)
 				cap_val = pir_ota_data_tx_buffer[ir_ota_data_tx_counter - 1]; // Take the transmitted data
 				if ( Timerhdl_IrTx.Instance->ARR & 0x0001 ) // Tx data of this period (this bit) is a Mark
 				{
-					if ( !(cap_val & 0x0001) ) // Previous tx_ed is a Space?
-						irsnd_on(); // Let turn on the Carrier
+                    if (!(cap_val & IR_OTA_PULSE_BIT_MASK) && !irsnd_on())
+                        ir_ota_tx_fault = true;
 				}
 				else // Tx data for this period (this bit) is a Space
 				{
@@ -518,11 +518,13 @@ void HAL_TIM_PeriodElapsedCallback_IR(TIM_HandleTypeDef *htim)
 						irsnd_off(); // Let turn off the Carrier
 				}
 				// Update reload value for the next bit (next period)
-				if (++ir_ota_data_tx_counter < ir_ota_data_tx_len)
-                    Timerhdl_IrTx.Instance->ARR = pir_ota_data_tx_buffer[ir_ota_data_tx_counter];
-			} // if ( ir_ota_data_tx_counter <= ir_ota_data_tx_len )
-			else
-			{
+                if (!ir_ota_tx_fault) {
+                    if (++ir_ota_data_tx_counter < ir_ota_data_tx_len)
+                        Timerhdl_IrTx.Instance->ARR = pir_ota_data_tx_buffer[ir_ota_data_tx_counter];
+                    return;
+                }
+            }
+            {
 				irsnd_off(); // Let turn off the Carrier
 				/* End the last sample without loading a one-past-end entry.
                  * Stop here even if the completion queue is full. */

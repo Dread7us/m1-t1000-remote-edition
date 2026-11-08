@@ -930,6 +930,10 @@ uint8_t m1_message_box_choice(u8g2_t *u8g2,const char *title1,const char *title2
 void m1_ui_selection(u8g2_t *display, int x, int y, int w, int h, bool selected)
 {
     u8g2_SetDrawColor(display, 1);
+    if (selected && m1_ui.outline == 2) {
+        if (w > 4 && h > 1) u8g2_DrawHLine(display, x + 2, y + h - 1, w - 4);
+        return;
+    }
     if (selected && !m1_ui.outline) {
         if (m1_ui.style == 1) u8g2_DrawRBox(display, x, y, w, h, 2);
         else u8g2_DrawBox(display, x, y, w, h);

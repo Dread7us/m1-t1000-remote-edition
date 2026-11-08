@@ -150,9 +150,9 @@ uint16_t *m1_get_ir_ota_buffer_ptr(void);
 uint8_t m1_get_ir_ota_frame_len(void);
 uint8_t m1_check_ir_ota_frame_status(void);
 uint8_t m1_ir_ota_frame_post_process(uint8_t ir_protocol);
-void irsnd_on(void);
+uint8_t irsnd_on(void);
 void irsnd_off(void);
-void irsnd_set_carrier_freq(uint32_t freq);
+uint8_t irsnd_set_carrier_freq(uint32_t freq);
 
 #endif
 extern void                                     irsnd_stop (void);

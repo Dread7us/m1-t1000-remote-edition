@@ -45,6 +45,10 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Infrared output and selection styling
+
+**Revision 13.** Parsed and raw signals share a frame start that primes timing before enabling the carrier and baseband. Replay reports a carrier or encoder failure instead of treating it as a completed send. Parsed timing storage is fixed, and Denon continuation frames contain only the entries they write. **System → Appearance → Selection** adds **Underline**. [Infrared changes and validation](documentation/remote-edition/ir-services.md).
+
 ## Infrared timing and switching
 
 **Revision 12 · Built and native-tested; device check pending.** Universal power playback now waits for complete protocols rather than a fixed sleep. IR inter-frame gaps use clock deadlines without blocking the shared timer service. Receiver entry/exit resets stale timer and interrupt state, and the diagnostic transmitter no longer frees static timing storage. [Corrections and test coverage](documentation/remote-edition/ir-services.md).

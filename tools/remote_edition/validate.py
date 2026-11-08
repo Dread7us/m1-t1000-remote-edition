@@ -137,7 +137,7 @@ exe=compile('parser',[out/'parser.c',*common])
 print(run([exe,out/'many.ir',out/'malformed.ir',repo/'ir_database/TV/Samsung.ir']))
 # Run the actual render functions with drawing-bound assertions. The mocked
 # font widths are conservative (tiny=4 px, regular=5 px per character).
-geometry=(repo/'tools/remote_edition/geometry_prelude.h').read_text()
+geometry=(repo/'tools/remote_edition/geometry_prelude.h').read_text()+'\nstatic bool ir_ota_tx_fault;\n'
 for signature in ['static void remote_draw_text(', 'static void draw_commands(const char *title, uint16_t selection)', 'static const uint8_t *remote_button_icon(const char *name)', 'static void draw_remote_grid(const char *title, uint16_t selection)']:
  start=code.index(signature,code.index('static void remote_draw_text('))
  body=code.index('{',start); depth=1; end=body+1
@@ -145,11 +145,12 @@ for signature in ['static void remote_draw_text(', 'static void draw_commands(co
   depth+=(code[end]=='{')-(code[end]=='}');end+=1
  geometry+='\n'+code[start:end]+'\n'
 geometry+='''
+
 int main(void) {
  const char *names[]={"Power","Mute","Vol_up","Vol_dn","Ch_next","Ch_prev","Play","Pause","Next","Prev","A_very_long_unknown_button_name"};
  for(unsigned i=0;i<64;i++) snprintf(s_commands[i].name,sizeof(s_commands[i].name),"%s",names[i%11]);
  for(s_cmd_count=1;s_cmd_count<=64;s_cmd_count++)for(uint16_t i=0;i<s_cmd_count;i++)for(unsigned tx=0;tx<2;tx++) {
-  s_remote_tx_started=(bool)tx;
+  s_remote_tx_started=(bool)tx;ir_ota_tx_fault=false;
   m1_u8g2.width=128;m1_u8g2.height=64;
   draw_commands("A remote filename longer than the entire display could ever fit",i);
   m1_u8g2.width=64;m1_u8g2.height=128;
@@ -233,7 +234,7 @@ int main(void) {
   assert(m1_ui_step(v,count,1,1)==(v+1)%count);
  }
  appearance_save();assert(!failures);
- m1_ui.style=2;m1_ui.outline=1;m1_ui.clock=0;m1_ui.wrap=0;appearance_save();assert(!failures);
+ m1_ui.style=2;m1_ui.outline=2;m1_ui.clock=0;m1_ui.wrap=0;appearance_save();assert(!failures);
  m1_ui_preferences_t expected=m1_ui,defaults=M1_UI_DEFAULTS;
  m1_ui=defaults;appearance_load();assert(!memcmp(&m1_ui,&expected,sizeof(expected)));
  fail_write=1;m1_ui.style=0;appearance_save();assert(failures==1);
@@ -285,6 +286,7 @@ static void u8g2_DrawFrame(u8g2_t *d,int x,int y,int w,int h){(void)d;bounds(x,y
 static void u8g2_DrawRBox(u8g2_t *d,int x,int y,int w,int h,int r){(void)r;u8g2_DrawBox(d,x,y,w,h);}
 static void u8g2_DrawRFrame(u8g2_t *d,int x,int y,int w,int h,int r){(void)r;u8g2_DrawFrame(d,x,y,w,h);}
 static void u8g2_DrawVLine(u8g2_t *d,int x,int y,int h){(void)d;bounds(x,y,1,h);}
+static void u8g2_DrawHLine(u8g2_t *d,int x,int y,int w){(void)d;bounds(x,y,w,1);}
 """+'\n'.join(functions)+r"""
 int main(void){
  u8g2_t screen=0;char long_label[300];memset(long_label,'W',sizeof(long_label)-1);long_label[sizeof(long_label)-1]=0;
@@ -292,13 +294,13 @@ int main(void){
   left=2;right=2+width;m1_draw_text(&screen,left,30,width,long_label,align);
   m1_draw_text(&screen,left,30,width,"OK",align);m1_draw_text(&screen,left,30,width,NULL,align);
  }
- for(int style=0;style<3;++style)for(int outline=0;outline<2;++outline){
+ for(int style=0;style<3;++style)for(int outline=0;outline<3;++outline){
   m1_ui.style=style;m1_ui.outline=outline;
   m1_ui_selection(&screen,2,15,124,11,true);assert(color==(outline?1:0));
   m1_ui_selection(&screen,2,27,124,11,false);assert(color==1);
   m1_draw_content_frame(&screen,2,14,124,35);
  }
- assert(calls>0);puts("PASS: actual theme primitives and long-label ellipsis stay in bounds at every width/alignment and all six styles");return 0;
+ assert(calls>0);puts("PASS: actual theme primitives and long-label ellipsis stay in bounds at every width/alignment and all nine style/selection combinations");return 0;
 }
 """
 (out/'ui-render.c').write_text(harness)
@@ -378,14 +380,14 @@ static S_M1_SubGHz_Scan_Config subghz_scan_config={2};
 static uint8_t subghz_replay_ret_code,subghz_replay_band,subghz_replay_channel,subghz_tx_power_idx;
 static uint8_t tx_power_values[]={12};static int double_buffer_ptr_id;
 static struct {char dat_filename[256];} datfile_info;
-static bool s_remote_tx_started,s_automation_tx;
+static bool s_remote_tx_started,s_automation_tx,ir_ota_tx_fault;
 static char s_raw_tx_filepath[256];static int s_commands[]={100,200,300},last_command;
 static TickType_t xTaskGetTickCount(void){return ticks;}
 static int xQueueReceive(int q,S_M1_Main_Q_t *e,unsigned timeout){(void)q;ticks+=timeout;if(mode==1)return 0;e->q_evt_type=radio?Q_EVENT_SUBGHZ_TX:Q_EVENT_IRRED_TX;return 1;}
 static bool cancelled_test(void){return cancel_after && ++cancel_calls>=cancel_after;}
 static unsigned ir_automation_buttons(const char *p){(void)p;return 3;}
 static bool ir_automation_button(unsigned i,char *n,size_t c){snprintf(n,c,"button");return i<3;}
-static void transmit_command(const int *p){last_command=*p;++starts;s_remote_tx_started=!start_fail;}
+static void transmit_command(const int *p){last_command=*p;++starts;s_remote_tx_started=start_fail!=1;ir_ota_tx_fault=start_fail==2;}
 static void remote_tx_stop(void){s_remote_tx_started=false;++stops;}
 static bool remote_tx_finished(void){return mode!=1;}
 static void m1_led_fast_blink(int a,int b,int c){(void)a;(void)b;(void)c;}
@@ -404,13 +406,14 @@ static void sub_ghz_ring_buffers_deinit(void){}
 static void sub_ghz_set_opmode(int a,int b,int c,int d){(void)a;(void)b;(void)c;(void)d;}
 static void menu_sub_ghz_exit(void){}
 """+ir+'\n'+rf+r"""
-static void reset(void){mode=radio=start_fail=buffer_fail=blocked=cancel_after=cancel_calls=starts=stops=releases=0;ticks=0;last_command=0;}
+static void reset(void){ir_ota_tx_fault=false;mode=radio=start_fail=buffer_fail=blocked=cancel_after=cancel_calls=starts=stops=releases=0;ticks=0;last_command=0;}
 int main(void){
  reset();assert(ir_automation_send("remote.ir",1,cancelled_test)==ACTION_OK);assert(last_command==200&&starts==1&&stops==1&&!s_remote_tx_started);
  reset();assert(ir_automation_send("remote.ir",99,cancelled_test)==ACTION_FAILED);assert(!starts);
  reset();mode=1;assert(ir_automation_send("remote.ir",0,cancelled_test)==ACTION_FAILED);assert(stops==1);
  reset();cancel_after=2;assert(ir_automation_send("remote.ir",0,cancelled_test)==ACTION_CANCELLED);assert(stops==1);
  reset();start_fail=1;assert(ir_automation_send("remote.ir",0,cancelled_test)==ACTION_FAILED);
+ reset();start_fail=2;assert(ir_automation_send("remote.ir",0,cancelled_test)==ACTION_FAILED&&stops==1);
  reset();radio=1;assert(sub_ghz_automation_send("lamp.sgh",cancelled_test)==ACTION_OK);assert(starts==1&&stops==1&&releases==1&&subghz_custom_freq_hz==315000000&&subghz_scan_config.modulation==2);
  reset();radio=1;blocked=1;assert(sub_ghz_automation_send("lamp.sgh",cancelled_test)==ACTION_FAILED);assert(!starts&&!releases);
  reset();radio=1;buffer_fail=1;assert(sub_ghz_automation_send("lamp.sgh",cancelled_test)==ACTION_FAILED);assert(!starts&&!stops&&releases==1);
@@ -497,13 +500,15 @@ typedef struct {struct {unsigned ir_tx_data;} q_data;unsigned q_evt_type;} S_M1_
 typedef int portBASE_TYPE;
 #define pdFALSE 0
 #define FALSE 0
+#define IR_OTA_PULSE_BIT_MASK 1
 #define Q_EVENT_IRRED_TX 1
 #define portYIELD_FROM_ISR(x) ((void)(x))
 static REG reg;static TIM_HandleTypeDef Timerhdl_IrTx={&reg};
 static bool ir_ota_data_tx_active;static unsigned ir_ota_data_tx_counter,ir_ota_data_tx_len;
 static uint16_t *pir_ota_data_tx_buffer;static unsigned complete,stopped;
 static int main_q_hdl;
-static void irsnd_on(void){}
+static bool ir_ota_tx_fault, fail_carrier;
+static bool irsnd_on(void){return !fail_carrier;}
 static void irsnd_off(void){}
 static void disable(TIM_HandleTypeDef *h){(void)h;++stopped;}
 #define __HAL_TIM_DISABLE(h) disable(h)
@@ -519,6 +524,9 @@ int main(void){
   unsigned callbacks=0;while(ir_ota_data_tx_active){assert(++callbacks<=n);transmit_irq(&Timerhdl_IrTx);assert(reg.ARR!=65531);}
   assert(callbacks==n&&complete==1&&stopped==1);
  }
+ ir_ota_data_tx_len=2;ir_ota_data_tx_counter=1;ir_ota_data_tx_active=true;
+ buffer[0]=100;reg.ARR=101;fail_carrier=true;transmit_irq(&Timerhdl_IrTx);
+ assert(ir_ota_tx_fault&&!ir_ota_data_tx_active);
  puts("PASS: actual IR interrupt handles 1..512 samples with no one-past-end prefetch, exactly one completion, and timer stop");return 0;
 }
 """
@@ -570,10 +578,11 @@ typedef struct {Registers *Instance;} Timer;
 static Registers regs;static Timer Timerhdl_IrTx={&regs};
 typedef uint32_t TickType_t;
 static unsigned stage,post;static TickType_t ticks,ir_tx_delay_start,ir_tx_delay_ticks;
-static bool ir_ota_data_tx_active;
+static bool ir_ota_data_tx_active,ir_ota_tx_fault,critical,fail_carrier;
+static unsigned active_arr;
 static TickType_t xTaskGetTickCount(void){return ticks;}
 static uint16_t ir_ota_data_tx_counter,ir_ota_data_tx_len,*pir_ota_data_tx_buffer;
-static uint16_t samples[]={100,201,100};
+static uint16_t samples[]={101,200,101};
 #define TRUE 1
 #define pdFAIL 0
 #define pdFALSE 0
@@ -584,7 +593,11 @@ static uint16_t samples[]={100,201,100};
 #define TIM_FLAG_UPDATE 1
 #define __HAL_TIM_URS_ENABLE(h) ((void)(h))
 #define __HAL_TIM_URS_DISABLE(h) ((void)(h))
-#define __HAL_TIM_ENABLE(h) ((void)(h))
+#define IR_OTA_PULSE_BIT_MASK 1
+#define taskENTER_CRITICAL() (critical=true)
+#define taskEXIT_CRITICAL() (critical=false)
+#define __HAL_TIM_CLEAR_FLAG(h,f) ((h)->Instance->SR &= ~(f))
+#define __HAL_TIM_ENABLE(h) assert(critical && ir_ota_data_tx_active && ir_ota_data_tx_counter==1 && active_arr==pir_ota_data_tx_buffer[0] && (h)->Instance->ARR==pir_ota_data_tx_buffer[ir_ota_data_tx_len>1?1:0])
 #define __HAL_TIM_DISABLE(h) ((void)(h))
 #define HAL_IS_BIT_SET(a,b) ((a)&(b))
 #define CLEAR_BIT(a,b) ((a)&=~(b))
@@ -592,11 +605,12 @@ static unsigned m1_make_ir_ota_multiframes(void){unsigned values[]={1,2000,1,0};
 static unsigned m1_check_ir_ota_frame_status(void){return 1;}
 static unsigned m1_get_ir_ota_frame_len(void){return 3;}
 static uint16_t *m1_get_ir_ota_buffer_ptr(void){return samples;}
-static void HAL_TIM_GenerateEvent(Timer *h,int e){(void)h;(void)e;}
-static void irsnd_on(void){}
+static void HAL_TIM_GenerateEvent(Timer *h,int e){(void)e;assert(critical);active_arr=h->Instance->ARR;}
+static bool irsnd_on(void){assert(critical&&!ir_ota_data_tx_active);return !fail_carrier;}
+static void irsnd_off(void){}
 static uint8_t irsnd_tx_protocol(void){return 0x44;}
 static void m1_ir_ota_frame_post_process(unsigned protocol){assert(protocol==0x44);++post;}
-"""+machine+r"""
+"""+extract_body(infrared,'bool infrared_start_frame(uint16_t *samples, uint16_t count)')+'\n'+machine+r"""
 int main(void){for(unsigned command=0;command<1000;++command){stage=post=0;ticks=command%2?UINT32_MAX-1:100;ir_ota_data_tx_active=false;
  infrared_transmit(1);assert(infrared_transmit(0)==IR_TX_ACTIVE&&ir_ota_data_tx_active);
  ir_ota_data_tx_active=false;assert(infrared_transmit(0)==IR_TX_DELAY&&post==1);
@@ -604,7 +618,9 @@ int main(void){for(unsigned command=0;command<1000;++command){stage=post=0;ticks
  ticks++;assert(infrared_transmit(0)==IR_TX_DELAY);
  ticks++;assert(infrared_transmit(0)==IR_TX_ACTIVE);
  ir_ota_data_tx_active=false;assert(infrared_transmit(0)==IR_TX_COMPLETED&&post==2&&stage==4);
- }puts("PASS: actual parsed IR state machine completes both frames and gap without timer allocation or queue notifications across 1000 commands, including tick rollover");return 0;}
+ }fail_carrier=true;assert(!infrared_start_frame(samples,1)&&ir_ota_tx_fault&&!ir_ota_data_tx_active&&!critical);
+ ir_ota_tx_fault=false;assert(!infrared_start_frame(samples,0)&&ir_ota_tx_fault);
+ puts("PASS: actual parsed IR state machine completes both frames and gap without timer allocation or queue notifications across 1000 commands, including tick rollover");return 0;}
 
 """
 (out/'ir-frames.c').write_text(machine_test);exe=compile('ir-frames',[out/'ir-frames.c']);print(run([exe]))
@@ -642,6 +658,68 @@ static int HAL_TIM_PWM_ConfigChannel(Timer *t,TIM_OC_InitTypeDef *c,unsigned cha
 int main(void){for(unsigned i=0;i<1000;++i){irsnd_set_freq(i%2?38000:56000);}assert(configs==1000);puts("PASS: actual carrier setup fully specifies polarity, idle states and master settings across 1000 alternating frequencies");return 0;}
 """
 (out/'ir-carrier.c').write_text(carrier_test);exe=compile('ir-carrier',[out/'ir-carrier.c']);print(run([exe]))
+
+# Compile the complete encoder with only the STM32 peripheral calls shimmed.
+# In particular, validate the Denon continuation frame at the offset where the
+# old length calculation sent unwritten timing entries.
+full_encoder=(repo/'tools/remote_edition/encoder_prelude.h').read_text()
+full_encoder+='\n'+f'#include "{(repo/"Infrared/irsndconfig.h").as_posix()}"\n#include "{(repo/"Infrared/irmpprotocols.h").as_posix()}"\n'
+full_encoder+=encoder.replace('#include "irsnd.h"','',1)
+full_encoder+=r"""
+int main(void)
+{
+    TIM_HandleTypeDef timer = {0};
+    TIM_TypeDef registers = {0};
+    timer.Instance = &registers;
+    irsnd_init(&timer, 12);
+    assert(!irsnd_set_carrier_freq(0) && !irsnd_set_carrier_freq(UINT32_MAX));
+    assert(irsnd_set_carrier_freq(38000));
+    assert(irsnd_on() && (registers.CCER & (TIM_CCER_CC1NE << 12)));
+    irsnd_off();
+    carrier_failure=1; assert(!irsnd_on());
+    carrier_failure=2; assert(!irsnd_on());
+    carrier_failure=0;
+
+    const uint8_t protocols[] = { IRMP_NEC_PROTOCOL, IRMP_NEC42_PROTOCOL,
+        IRMP_SAMSUNG32_PROTOCOL, IRMP_SIRCS_PROTOCOL, IRMP_KASEIKYO_PROTOCOL,
+        IRMP_DENON_PROTOCOL, IRMP_RC5_PROTOCOL, IRMP_RC6_PROTOCOL,
+        IRMP_JVC_PROTOCOL, IRMP_LGAIR_PROTOCOL, IRMP_BOSE_PROTOCOL,
+        IRMP_MATSUSHITA_PROTOCOL };
+    for (unsigned rep=0; rep<50; ++rep) {
+        for (unsigned p=0; p<sizeof(protocols); ++p) {
+            irsnd_init(&timer, 12);
+            IRMP_DATA data = {protocols[p], 0x1234, 0x25, 0};
+            assert(irsnd_generate_tx_data(data));
+            unsigned frames=0, steps=0;
+            for (uint16_t next; (next=m1_make_ir_ota_multiframes()) != 0;) {
+                assert(++steps<40);
+                if (next>1) continue;
+                assert(m1_check_ir_ota_frame_status());
+                unsigned count=m1_get_ir_ota_frame_len();
+                assert(count && count<=IR_TX_OTA_BITS_FRAME_LEN_MAX);
+                bool has_mark=false;
+                for (unsigned i=0;i<count;++i) {
+                    uint16_t sample=m1_get_ir_ota_buffer_ptr()[i];
+                    if (sample<=1) fprintf(stderr,"protocol=%u frame=%u entry=%u count=%u sample=%u\n",protocols[p],frames,i,count,sample);
+                    assert(sample>1);
+                    has_mark |= (sample & IR_OTA_PULSE_BIT_MASK) != 0;
+                }
+                assert(has_mark);
+                if (protocols[p]==IRMP_DENON_PROTOCOL) assert(count==32);
+                ++frames;
+                m1_ir_ota_frame_post_process(irsnd_tx_protocol());
+                memset(m1_get_ir_ota_buffer_ptr(),0,sizeof(ir_ota_pkt_buffer));
+            }
+            assert(frames>0);
+            if (protocols[p]==IRMP_DENON_PROTOCOL) assert(frames==2);
+        }
+    }
+    puts("PASS: full encoder generates initialized timing entries for 600 sends across 12 protocols, both Denon frames, and detects carrier-enable failures");
+    return 0;
+}
+"""
+(out/'ir-encoder.c').write_text(full_encoder);exe=compile('ir-encoder',[out/'ir-encoder.c']);print(run([exe]))
+
 
 
 encoder=(repo/'Infrared/irsnd.c').read_text()

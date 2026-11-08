@@ -55,6 +55,7 @@ IRMP_DATA 			irmp_data;
 volatile S_M1_IR_Det IrRx_Edge_Det; // Flag for first falling edge detected
 
 volatile uint8_t ir_ota_data_tx_active;
+volatile bool ir_ota_tx_fault;
 uint16_t ir_ota_data_tx_len;
 volatile uint16_t ir_ota_data_tx_counter;
 uint16_t *pir_ota_data_tx_buffer;
@@ -118,6 +119,37 @@ void menu_infrared_exit(void)
  * Return: state machine's status of the transmitter
  */
 /*============================================================================*/
+bool infrared_start_frame(uint16_t *samples, uint16_t count)
+{
+    if (!samples || !count) {
+        ir_ota_tx_fault = true;
+        return false;
+    }
+
+    /* Prime the active ARR and its preload before enabling the counter.
+     * Keep the first carrier edge and the baseband start together. */
+    taskENTER_CRITICAL();
+    Timerhdl_IrTx.Instance->ARR = samples[0];
+    __HAL_TIM_URS_ENABLE(&Timerhdl_IrTx);
+    HAL_TIM_GenerateEvent(&Timerhdl_IrTx, TIM_EVENTSOURCE_UPDATE);
+    __HAL_TIM_CLEAR_FLAG(&Timerhdl_IrTx, TIM_FLAG_UPDATE);
+    if (count > 1) Timerhdl_IrTx.Instance->ARR = samples[1];
+
+    ir_ota_data_tx_len = count;
+    ir_ota_data_tx_counter = 1;
+    pir_ota_data_tx_buffer = samples;
+    if ((samples[0] & IR_OTA_PULSE_BIT_MASK) && !irsnd_on()) {
+        irsnd_off();
+        ir_ota_tx_fault = true;
+        taskEXIT_CRITICAL();
+        return false;
+    }
+    ir_ota_data_tx_active = TRUE;
+    __HAL_TIM_ENABLE(&Timerhdl_IrTx);
+    taskEXIT_CRITICAL();
+    return true;
+}
+
 S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 {
 	static uint32_t ir_delay_time;
@@ -140,37 +172,13 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 				{
 					if ( wtemp==TRUE ) // Return value is not a delay time?
 					{
-						if ( m1_check_ir_ota_frame_status() )
-						{
-							ir_ota_data_tx_active = TRUE;
-							ir_ota_data_tx_counter = 0;
-							ir_ota_data_tx_len = m1_get_ir_ota_frame_len();
-							pir_ota_data_tx_buffer = m1_get_ir_ota_buffer_ptr();
-							__HAL_TIM_URS_ENABLE(&Timerhdl_IrTx); // Enable URS to temporarily disable the UIF when the UG bit is set
-							Timerhdl_IrTx.Instance->ARR = pir_ota_data_tx_buffer[0]; // Update Auto Reload Register ARR value
-							HAL_TIM_GenerateEvent(&Timerhdl_IrTx, TIM_EVENTSOURCE_UPDATE); // Generate Update Event (set UG bit) to reload the valid ARR and reset the counter
-							__HAL_TIM_URS_DISABLE(&Timerhdl_IrTx); // Disable URS to enable the UIF again
-							  /* Check if the update flag is set after the Update Generation, if so clear the UIF flag */
-							if (HAL_IS_BIT_SET(Timerhdl_IrTx.Instance->SR, TIM_FLAG_UPDATE))
-							{
-								/* Clear the update flag */
-								CLEAR_BIT(Timerhdl_IrTx.Instance->SR, TIM_FLAG_UPDATE);
-							}
-							if ( pir_ota_data_tx_buffer[0] & 0x0001 ) // First OTA bit is a Mark?
-								irsnd_on(); // Start the PWM of the carrier at the output
-							__HAL_TIM_ENABLE(&Timerhdl_IrTx); // Start the timer of the baseband to control the carrier
-							// Update reload value for the next bit (next period)
-							ir_ota_data_tx_counter = 1;
-                            if (ir_ota_data_tx_len > 1) Timerhdl_IrTx.Instance->ARR = pir_ota_data_tx_buffer[1]; // Prefetch only an existing sample
-							//__HAL_TIM_SET_COUNTER(&Timerhdl_IrTx, 0);
-							ir_tx_state = IR_TX_ACTIVE; // update state machine
-						} // if ( m1_check_ir_ota_frame_status() )
-						else // OTA frame buffer is not ready for some reason. Let finish.
-						{
-							; // Send warning message to display
-							; // exit
-							ir_tx_state = IR_TX_COMPLETED;
-						}
+                        if (m1_check_ir_ota_frame_status() &&
+                            infrared_start_frame(m1_get_ir_ota_buffer_ptr(), m1_get_ir_ota_frame_len())) {
+                            ir_tx_state = IR_TX_ACTIVE;
+                        } else {
+                            ir_ota_tx_fault = true;
+                            ir_tx_state = IR_TX_COMPLETED;
+                        }
 					}// if ( wtemp==TRUE )
 					else // Let do a delay with the delay time given in the return value
 					{
@@ -190,7 +198,11 @@ S_M1_IR_Tx_States infrared_transmit(uint8_t init)
 				}
 				break;
 
-			case IR_TX_ACTIVE:
+            case IR_TX_ACTIVE:
+                if (ir_ota_tx_fault) {
+                    ir_tx_state = IR_TX_COMPLETED;
+                    break;
+                }
 				if ( !ir_ota_data_tx_active ) // Tx completed?
 				{
 					__HAL_TIM_DISABLE(&Timerhdl_IrTx); // Stop the timer of the baseband
@@ -796,6 +808,7 @@ void infrared_encode_sys_init(void)
     HAL_NVIC_DisableIRQ(IR_ENCODE_TIMER_IRQn);
     ir_tx_delay_start = ir_tx_delay_ticks = 0;
     ir_ota_data_tx_active = FALSE;
+    ir_ota_tx_fault = false;
     IR_ENCODE_CARRIER_TIMER_CLK();
     IR_ENCODE_BASEBAND_TIMER_CLK();
     __HAL_RCC_TIM1_FORCE_RESET();

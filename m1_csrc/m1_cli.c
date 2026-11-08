@@ -656,7 +656,11 @@ void cmd_m1_mtest_infrared(char *pconsole, char *input_params[], uint8_t n_param
 
     		// must be in this order
     		infrared_encode_sys_init();
-    		irsnd_generate_tx_data(irmp_data); // make ota data
+            if (!irsnd_generate_tx_data(irmp_data)) {
+                infrared_encode_sys_deinit();
+                strcpy(pconsole, "Error: unsupported IR protocol!\r\n");
+                break;
+            }
     		infrared_transmit(1); // initialize the tx
             /* Advance every frame and protocol gap without starving the tick.
              * The encoder owns its static OTA storage; never free that pointer. */
@@ -667,6 +671,7 @@ void cmd_m1_mtest_infrared(char *pconsole, char *input_params[], uint8_t n_param
             bool ir_done = infrared_transmit(0) == IR_TX_COMPLETED;
             infrared_encode_sys_deinit();
             xQueueReset(main_q_hdl);
+            if (ir_ota_tx_fault) {strcpy(pconsole, "Error: IR output failed!\r\n");break;}
             if (!ir_done) {strcpy(pconsole, "Error: IR transmit timed out!\r\n");break;}
     		strcpy(pconsole, "Transmit completed!\r\n");
     		break;

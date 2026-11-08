@@ -332,7 +332,7 @@ static uint8_t ir_tx_buffer[11] = {0};
 
 static uint8_t ir_ota_buffer_ok;
 static uint8_t ir_ota_frame_len;
-static uint16_t *ir_ota_pkt_buffer = NULL;
+static uint16_t ir_ota_pkt_buffer[IR_TX_OTA_BITS_FRAME_LEN_MAX];
 static uint32_t ir_carrier_pwm_channel;
 
 static TIM_HandleTypeDef *pir_timhdl_carrier;
@@ -350,7 +350,7 @@ static void irsnd_set_freq(IRSND_FREQ_TYPE freq);
 
 /*============================================================================*/
 /*
- * This function returns the pointer to the allocated ota buffer.
+ * This function returns the encoder-owned timing buffer.
 */
 /*============================================================================*/
 uint16_t *m1_get_ir_ota_buffer_ptr(void)
@@ -459,10 +459,14 @@ static void irsnd_set_freq(IRSND_FREQ_TYPE freq)
  * Public wrapper to set carrier frequency for raw IR TX
  */
 /*============================================================================*/
-void irsnd_set_carrier_freq(uint32_t freq)
+uint8_t irsnd_set_carrier_freq(uint32_t freq)
 {
-	irsnd_set_freq((IRSND_FREQ_TYPE)freq);
-} // void irsnd_set_carrier_freq(uint32_t freq)
+    if (!freq) return FALSE;
+    uint32_t divider = HAL_RCC_GetPCLK2Freq() / IR_ENCODE_CARRIER_PRESCALE_FACTOR / freq;
+    if (!divider || divider > 65536U) return FALSE;
+    irsnd_set_freq((IRSND_FREQ_TYPE)freq);
+    return TRUE;
+} // uint8_t irsnd_set_carrier_freq(uint32_t freq)
 
 
 
@@ -471,11 +475,15 @@ void irsnd_set_carrier_freq(uint32_t freq)
  * Switch PWM on for Carrier
  */
 /*============================================================================*/
-void irsnd_on(void)
+uint8_t irsnd_on(void)
 {
-	//HAL_TIM_PWM_Start(pir_timhdl_carrier, ir_carrier_pwm_channel);
-	HAL_TIMEx_PWMN_Start(pir_timhdl_carrier, ir_carrier_pwm_channel);
-} // static void irsnd_on (void)
+    if (HAL_TIMEx_PWMN_Start(pir_timhdl_carrier, ir_carrier_pwm_channel) != HAL_OK)
+        return FALSE;
+    const TIM_TypeDef *timer = pir_timhdl_carrier->Instance;
+    const uint32_t output_mask = TIM_CCER_CC1NE << ir_carrier_pwm_channel;
+    return (timer->CCER & output_mask) && (timer->BDTR & TIM_BDTR_MOE) &&
+           (timer->CR1 & TIM_CR1_CEN);
+} // uint8_t irsnd_on(void)
 
 
 
@@ -1958,9 +1966,9 @@ void m1_make_ir_ota_bit_times(void)
 uint8_t m1_make_ir_ota_frame(void)
 {
 	uint8_t i, cur_bit;
-	uint8_t first_pulse, allocation_ok;
+	uint8_t first_pulse, frame_ready;
 
-	allocation_ok = FALSE;
+	frame_ready = FALSE;
 
 	switch (ir_tx_protocol)
 	{
@@ -2080,36 +2088,23 @@ uint8_t m1_make_ir_ota_frame(void)
 	 * Buffer len = 2*Packet len of uint16_t, max = 100*2*uint16_t
 	 */
 			i = 0; // index of first data bit in the ota frame
-			ir_ota_frame_len = 0;
-			if ( ir_has_start_bit ) // start bit?
-			{
-				ir_ota_frame_len++;
-			} // if ( ir_has_start_bit )
+            /* Denon and other headerless protocols use zero start timings. */
+            bool has_header = ir_has_start_bit && (startbit_pulse_len || startbit_space_len);
+            unsigned entries = 2U * (complete_data_len - ir_frame_current_bit +
+                                     has_header + !!ir_has_stop_bit);
+            if (entries == 0 || entries > IR_TX_OTA_BITS_FRAME_LEN_MAX)
+                return FALSE;
+            ir_ota_frame_len = (uint8_t)entries;
+            {
+                frame_ready = TRUE;
 
-			ir_ota_frame_len += complete_data_len;
-
-			if (ir_has_stop_bit)
-				ir_ota_frame_len++;
-
-			ir_ota_frame_len <<= 1; // Each data bit will be converted to two over-the-air (OTA) bits
-
-			if ( ir_ota_frame_len >= IR_TX_OTA_BITS_FRAME_LEN_MAX )
-				ir_ota_frame_len = IR_TX_OTA_BITS_FRAME_LEN_MAX; // length cut
-
-			if ( ir_ota_pkt_buffer!=NULL ) // previously allocated without being freed?
-				free(ir_ota_pkt_buffer);
-			ir_ota_pkt_buffer = (uint16_t *) malloc(ir_ota_frame_len*2); // Each OTA bit is a 16-bit integer
-			if ( ir_ota_pkt_buffer!=NULL )
-			{
-				allocation_ok = TRUE;
-
-				if ( ir_has_start_bit ) // frame has start bit?
+				if (has_header)
 				{
 					ir_ota_pkt_buffer[0] = startbit_pulse_len | IR_OTA_PULSE_BIT_MASK;
 					ir_ota_pkt_buffer[1] = startbit_space_len & IR_OTA_SPACE_BIT_MASK;
 					i = 2;
-					ir_has_start_bit = FALSE; // reset
 				}
+                ir_has_start_bit = FALSE;
 				while ( ir_frame_current_bit < complete_data_len )
 				{
 #if IRSND_SUPPORT_SAMSUNG_PROTOCOL==1
@@ -2234,10 +2229,11 @@ uint8_t m1_make_ir_ota_frame(void)
 	                	ir_bit_space_len = 0xFFFF;       // last frame: pause of 255
 	                }
 
-	                ir_ota_pkt_buffer[ir_ota_frame_len-2] = ir_bit_pulse_len | IR_OTA_PULSE_BIT_MASK;;
-	                ir_ota_pkt_buffer[ir_ota_frame_len-1] = ir_bit_space_len & IR_OTA_SPACE_BIT_MASK;;
+	                ir_ota_pkt_buffer[i++] = ir_bit_pulse_len | IR_OTA_PULSE_BIT_MASK;
+	                ir_ota_pkt_buffer[i++] = ir_bit_space_len & IR_OTA_SPACE_BIT_MASK;
 	            } // if (ir_has_stop_bit)
-			} // if ( ir_ota_pkt_buffer!=NULL )
+                ir_ota_frame_len = i;
+			} // Build frame
 
 			// m1_ir_ota_frame_post_process(IRMP_NEC_PROTOCOL) should be called after this ota frame has been transmitted completely
 	        break;
@@ -2297,15 +2293,10 @@ uint8_t m1_make_ir_ota_frame(void)
 			ir_ota_frame_len += complete_data_len;
 			ir_ota_frame_len <<= 1; // Each data bit will be converted to two over-the-air (OTA) bits
 
-			if ( ir_ota_frame_len >= IR_TX_OTA_BITS_FRAME_LEN_MAX )
-				ir_ota_frame_len = IR_TX_OTA_BITS_FRAME_LEN_MAX; // length cut
-
-			if ( ir_ota_pkt_buffer!=NULL ) // previously allocated without being freed?
-				free(ir_ota_pkt_buffer);
-			ir_ota_pkt_buffer = (uint16_t *) malloc(ir_ota_frame_len*2); // Each OTA bit is a 16-bit integer
-			if ( ir_ota_pkt_buffer!=NULL )
-			{
-				allocation_ok = TRUE;
+			if (ir_ota_frame_len == 0 || ir_ota_frame_len > IR_TX_OTA_BITS_FRAME_LEN_MAX)
+                return FALSE;
+            {
+                frame_ready = TRUE;
 
 				while ( ir_frame_current_bit < complete_data_len )
 				{
@@ -2417,8 +2408,9 @@ uint8_t m1_make_ir_ota_frame(void)
 					ir_frame_current_bit++;
 				} // while ( ir_frame_current_bit < complete_data_len )
 
+				ir_ota_frame_len = i;
 				// m1_ir_ota_frame_post_process(IRMP_RC5_PROTOCOL) should be called after this ota frame has been transmitted completely
-			} // if ( ir_ota_pkt_buffer!=NULL )
+			} // Build frame
 	        break;
 #endif // IRSND_SUPPORT_RC5_PROTOCOL==1 || IRSND_SUPPORT_RC6_PROTOCOL==1 || || IRSND_SUPPORT_RC6A_PROTOCOL==1 || IRSND_SUPPORT_SIEMENS_PROTOCOL==1 ||
 	       // IRSND_SUPPORT_RUWIDO_PROTOCOL==1 || IRSND_SUPPORT_GRUNDIG_PROTOCOL==1 || IRSND_SUPPORT_IR60_PROTOCOL==1 || IRSND_SUPPORT_NOKIA_PROTOCOL==1
@@ -2428,7 +2420,7 @@ uint8_t m1_make_ir_ota_frame(void)
 	        break;
 	} // switch (ir_tx_protocol)
 
-	return allocation_ok;
+	return frame_ready;
 } // uint8_t m1_make_ir_ota_frame(void)
 
 
@@ -2616,11 +2608,6 @@ uint8_t m1_ir_ota_frame_post_process(uint8_t ir_protocol)
 			break;
 	} // switch (ir_protocol)
 
-	if ( ir_ota_pkt_buffer!=NULL )
-	{
-		free(ir_ota_pkt_buffer);
-		ir_ota_pkt_buffer = NULL;
-	}
 	ir_ota_buffer_ok = FALSE;
 
 	return ir_tx_active;

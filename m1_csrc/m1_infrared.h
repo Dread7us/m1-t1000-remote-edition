@@ -109,6 +109,8 @@ extern TIM_HandleTypeDef    Timerhdl_IrCarrier;
 extern TIM_HandleTypeDef    Timerhdl_IrTx;
 extern TIM_HandleTypeDef    Timerhdl_IrRx;
 
+bool infrared_start_frame(uint16_t *samples, uint16_t count);
+extern volatile bool ir_ota_tx_fault;
 extern volatile uint8_t ir_ota_data_tx_active;
 extern uint16_t ir_ota_data_tx_len;
 extern volatile uint16_t ir_ota_data_tx_counter;

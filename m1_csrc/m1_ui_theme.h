@@ -7,7 +7,7 @@
 /* Kept independent of hardware and upstream's fixed firmware config struct. */
 typedef struct {
     uint8_t style;       /* Classic, Soft, Minimal */
-    uint8_t outline;     /* outline instead of filled selection */
+    uint8_t outline;     /* 0=Filled, 1=Outline, 2=Underline */
     uint8_t clock;
     uint8_t clock_12h;
     uint8_t battery;

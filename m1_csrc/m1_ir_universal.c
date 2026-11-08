@@ -1050,7 +1050,7 @@ static void draw_commands(const char *title, uint16_t selection)
     }
     snprintf(badge, sizeof(badge), "%u/%u", (unsigned)selection + 1, (unsigned)s_cmd_count);
     /* LEFT really opens the grid; center OK sends the selected command. */
-    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Grid", s_remote_tx_started ? "Wait" : "Send", s_remote_tx_started ? NULL : button_ok_8x8);
+    m1_draw_bottom_bar(&m1_u8g2, arrowleft_8x8, "Grid", s_remote_tx_started ? "Wait" : (ir_ota_tx_fault ? "IR failed" : "Send"), s_remote_tx_started ? NULL : button_ok_8x8);
     /* Counter is in the header so Back keeps its dedicated physical meaning. */
     u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
     u8g2_DrawBox(&m1_u8g2, 94, 0, 34, 11);
@@ -1102,7 +1102,7 @@ static void draw_remote_grid(const char *title, uint16_t selection)
     u8g2_DrawHLine(&m1_u8g2, 0, 105, 64);
     snprintf(badge, sizeof(badge), "%u/%u%s", (unsigned)(selection / 6) + 1, (unsigned)((s_grid_count + 5) / 6), s_remote_tx_started ? " TX" : "");
     remote_draw_text(&m1_u8g2, 1, 112, 62, badge, TEXT_ALIGN_CENTER);
-    remote_draw_text(&m1_u8g2, 1, 119, 62, "OK:Send", TEXT_ALIGN_CENTER);
+    remote_draw_text(&m1_u8g2, 1, 119, 62, ir_ota_tx_fault ? "IR failed" : "OK:Send", TEXT_ALIGN_CENTER);
     remote_draw_text(&m1_u8g2, 1, 127, 62, "Back:List", TEXT_ALIGN_CENTER);
     m1_u8g2_nextpage();
 }
@@ -1126,6 +1126,7 @@ static void show_remote_grid(const char *title, uint16_t *selection)
     draw_remote_grid(title, cursor);
     for (;;) {
         if (s_remote_tx_started && (remote_tx_finished() || xTaskGetTickCount() - s_remote_tx_tick >= pdMS_TO_TICKS(5000))) {
+            if (ir_ota_data_tx_active) ir_ota_tx_fault = true;
             remote_tx_stop();
             draw_remote_grid(title, cursor);
         }
@@ -1166,6 +1167,8 @@ static void show_commands(const char *ir_file_path)
 	const char *short_name;
 	const char *p;
 	char title[BROWSE_NAME_MAX_LEN];
+
+    ir_ota_tx_fault = false;
 
 	/* Store file path for raw TX re-read */
 	strncpy(s_raw_tx_filepath, ir_file_path, IR_UNIVERSAL_PATH_MAX_LEN - 1);
@@ -1341,13 +1344,17 @@ static void transmit_command(const ir_universal_cmd_t *cmd)
 	infrared_encode_sys_init();
 
 	/* Generate OTA data from the IRMP_DATA structure */
-	irsnd_generate_tx_data(s_tx_irmp_data);
+    if (!irsnd_generate_tx_data(s_tx_irmp_data)) {
+        ir_ota_tx_fault = true;
+        remote_tx_stop();
+        return;
+    }
 
 	/* Start the transmit process */
 	infrared_transmit(1); /* 1 = initialize state machine */
 	infrared_transmit(0); /* 0 = run state machine (kicks off TX) */
-
-	m1_buzzer_notification();
+    if (ir_ota_tx_fault) remote_tx_stop();
+    else m1_buzzer_notification();
 } // static void transmit_command(...)
 
 
@@ -1496,35 +1503,13 @@ static void transmit_raw_command(const ir_universal_cmd_t *cmd)
 	s_remote_tx_tick = xTaskGetTickCount();
 	infrared_encode_sys_init();
 
-	/* Set carrier frequency for this raw signal */
-	irsnd_set_carrier_freq(s_raw_tx_signal.raw.frequency);
-
-	/* Set up TX variables directly (bypassing IRSND OTA frame generation) */
-	ir_ota_data_tx_active = TRUE;
-	ir_ota_data_tx_counter = 0;
-	ir_ota_data_tx_len = ota_len;
-	pir_ota_data_tx_buffer = s_raw_ota_buffer;
-
-	/* Configure TIM16 with first entry and start transmission */
-	__HAL_TIM_URS_ENABLE(&Timerhdl_IrTx);
-	Timerhdl_IrTx.Instance->ARR = s_raw_ota_buffer[0];
-	HAL_TIM_GenerateEvent(&Timerhdl_IrTx, TIM_EVENTSOURCE_UPDATE);
-	__HAL_TIM_URS_DISABLE(&Timerhdl_IrTx);
-
-	if (HAL_IS_BIT_SET(Timerhdl_IrTx.Instance->SR, TIM_FLAG_UPDATE))
-		CLEAR_BIT(Timerhdl_IrTx.Instance->SR, TIM_FLAG_UPDATE);
-
-	if (s_raw_ota_buffer[0] & 0x0001) /* First entry is a mark */
-		irsnd_on();
-
-	__HAL_TIM_ENABLE(&Timerhdl_IrTx);
-
-	/* Load next entry for the second period */
-	ir_ota_data_tx_counter = 1;
-    if (ota_len > 1)
-		Timerhdl_IrTx.Instance->ARR = s_raw_ota_buffer[1];
-
-	m1_buzzer_notification();
+    if (!irsnd_set_carrier_freq(s_raw_tx_signal.raw.frequency) ||
+        !infrared_start_frame(s_raw_ota_buffer, ota_len)) {
+        ir_ota_tx_fault = true;
+        remote_tx_stop();
+        return;
+    }
+    m1_buzzer_notification();
 
 	/* TX is now running asynchronously via TIM16 ISR.
 	 * The ISR steps through s_raw_ota_buffer and sends Q_EVENT_IRRED_TX
@@ -1609,16 +1594,19 @@ static void ir_power_blast(const char *title, const char *const *paths, uint8_t 
                 s_remote_tx_started = true;
                 s_remote_tx_tick = xTaskGetTickCount();
 				infrared_encode_sys_init();
-				irsnd_generate_tx_data(s_tx_irmp_data);
-				infrared_transmit(1);
-				infrared_transmit(0);
+                if (irsnd_generate_tx_data(s_tx_irmp_data)) {
+                    infrared_transmit(1);
+                    infrared_transmit(0);
+                } else {
+                    ir_ota_tx_fault = true;
+                }
 			}
 
             /* Pump the complete protocol, including automatic frames and gaps.
              * A fixed sleep only sends the first hardware frame. */
             bool started = s_remote_tx_started;
             TickType_t began = xTaskGetTickCount();
-            while (started && !remote_tx_finished()) {
+            while (started && !ir_ota_tx_fault && !remote_tx_finished()) {
                 if (xTaskGetTickCount() - began >= pdMS_TO_TICKS(5000)) {aborted=true;break;}
                 if (xQueueReceive(main_q_hdl,&q_item,pdMS_TO_TICKS(1)) == pdTRUE && q_item.q_evt_type == Q_EVENT_KEYPAD &&
                     xQueueReceive(button_events_q_hdl,&this_button_status,0) == pdTRUE &&
@@ -1628,7 +1616,7 @@ static void ir_power_blast(const char *title, const char *const *paths, uint8_t 
             }
             remote_tx_stop();
             if (aborted) break;
-            if (started) sent++;
+            if (started && !ir_ota_tx_fault) sent++;
             vTaskDelay(pdMS_TO_TICKS(100));
 		}
 	}
@@ -2133,7 +2121,7 @@ m1_action_result_t ir_automation_send(const char *path,uint16_t index,m1_action_
         S_M1_Main_Q_t event;
         if (cancel && cancel()) {result=ACTION_CANCELLED;break;}
         xQueueReceive(main_q_hdl,&event,pdMS_TO_TICKS(1));
-        if (remote_tx_finished()) {result=ACTION_OK;break;}
+        if (remote_tx_finished()) {result=ir_ota_tx_fault ? ACTION_FAILED : ACTION_OK;break;}
     }
     remote_tx_stop();
     m1_led_fast_blink(LED_BLINK_ON_RGB,LED_FASTBLINK_PWM_OFF,LED_FASTBLINK_ONTIME_OFF);

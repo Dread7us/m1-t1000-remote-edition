@@ -1175,7 +1175,7 @@ void settings_backlight(void)
 /* Appearance preferences intentionally use a separate, versioned file. */
 #define APPEARANCE_PATH "0:/System/appearance.cfg"
 static const char *appearance_labels[] = {"Theme", "Selection", "Clock", "Time format", "Battery", "Animation", "Menu wrap", "Reset theme"};
-static const uint8_t appearance_counts[] = {3, 2, 2, 2, 2, 2, 2};
+static const uint8_t appearance_counts[] = {3, 3, 2, 2, 2, 2, 2};
 static uint8_t *appearance_field(unsigned i) {
     switch (i) {
     case 0: return &m1_ui.style; case 1: return &m1_ui.outline;
@@ -1224,6 +1224,7 @@ void settings_appearance(void) {
     uint8_t sel=0;
     for (;;) {
         static const char *styles[]={"Classic", "Soft", "Minimal"};
+        static const char *selections[]={"Filled", "Outline", "Underline"};
         m1_u8g2_firstpage();
         m1_draw_header_bar(&m1_u8g2, "Appearance", NULL);
         u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
@@ -1231,10 +1232,10 @@ void settings_appearance(void) {
         for (uint8_t row=0; row<3 && start+row<8; ++row) {
             uint8_t i=start+row; int y=15+row*12;
             m1_ui_selection(&m1_u8g2, 2, y, 124, 11, i==sel);
-            m1_draw_text(&m1_u8g2, 6, y+8, 72, appearance_labels[i], TEXT_ALIGN_LEFT);
-            const char *value = i==0 ? styles[m1_ui.style] : i==1 ? (m1_ui.outline ? "Outline":"Filled") :
+            m1_draw_text(&m1_u8g2, 6, y+8, 66, appearance_labels[i], TEXT_ALIGN_LEFT);
+            const char *value = i==0 ? styles[m1_ui.style] : i==1 ? selections[m1_ui.outline] :
                 i==3 ? (m1_ui.clock_12h ? "12h":"24h") : i==7 ? "OK" : (*appearance_field(i) ? "On":"Off");
-            m1_draw_text(&m1_u8g2, 80, y+8, 42, value, TEXT_ALIGN_RIGHT);
+            m1_draw_text(&m1_u8g2, 72, y+8, 50, value, TEXT_ALIGN_RIGHT);
         }
         m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Save", "Change", button_ok_8x8);
         m1_u8g2_nextpage();

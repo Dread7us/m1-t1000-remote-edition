@@ -5,7 +5,7 @@ Open **System → Appearance**. Up/Down selects a preference; center OK changes 
 | Preference | Choices |
 |---|---|
 | Theme | Classic frames, Soft rounded frames, Minimal unselected rows |
-| Selection | Filled highlight or outlined highlight with a side marker |
+| Selection | Filled highlight, outlined highlight with a side marker, or Underline (revision 13) |
 | Clock | Show or hide the home/shared runtime header clock |
 | Time format | 24-hour or 12-hour; runtime headers include a/p |
 | Battery | Show or hide percentage in home/shared runtime headers |
