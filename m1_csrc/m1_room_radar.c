@@ -47,13 +47,23 @@ static void wait_back(void)
     while (radar_key(portMAX_DELAY) != BUTTON_BACK_KP_ID) {}
 }
 
-static bool radar_at(const char *command)
+static room_radar_reply_t radar_exchange(const char *command)
 {
     memset(reply, 0, sizeof(reply));
-    uint8_t result = spi_AT_send_recv(command, reply, sizeof(reply) - 1U, 2);
-    size_t len = strlen(reply);
-    return result == SUCCESS && len >= 4 && !strcmp(reply + len - 4, "OK\r\n") &&
-           (len == 4 || reply[len - 5] == '\n');
+    if (spi_AT_send_recv(command, reply, sizeof(reply) - 1U, 3) != SUCCESS)
+        return ROOM_RADAR_NO_REPLY;
+    return room_radar_reply_status(reply);
+}
+
+static bool radar_at(const char *command)
+{
+    return radar_exchange(command) == ROOM_RADAR_OK_REPLY;
+}
+
+static bool radar_status(room_radar_result_t *result, room_radar_reply_t *status)
+{
+    *status = radar_exchange("AT+M1RADAR?\r\n");
+    return *status != ROOM_RADAR_NO_REPLY && room_radar_status_data(reply, result);
 }
 
 static void clean_label(char *label)
@@ -188,7 +198,11 @@ static bool radar_job(unsigned operation, room_radar_result_t *result, bool *can
         TickType_t now = xTaskGetTickCount();
         if (now - last_poll < pdMS_TO_TICKS(500)) continue;
         last_poll = now;
-        if (!radar_at("AT+M1RADAR?\r\n") || !room_radar_parse_result(reply, result)) break;
+        room_radar_reply_t status;
+        if (!radar_status(result, &status)) {
+            if (status == ROOM_RADAR_NO_REPLY) continue;
+            break;
+        }
         if (result->state == ROOM_RADAR_DONE) return true;
         if (result->state != ROOM_RADAR_RUNNING) break;
     }
@@ -200,10 +214,23 @@ static void radar_measure(unsigned operation)
 {
     const char *title = operation == 1U ? "Room motion" : "LAN devices";
     room_radar_result_t result;
-    if (!radar_at("AT+M1RADAR?\r\n") || !room_radar_parse_result(reply, &result)) {
-        radar_panel(title, "ESP32 update needed", "Room Radar companion", "See project setup guide", NULL);
-        wait_back();
-        return;
+    room_radar_reply_t status;
+    while (!radar_status(&result, &status)) {
+        switch (status) {
+        case ROOM_RADAR_NO_REPLY:
+            radar_panel(title, "No ESP32 reply", "Reset ESP32-C6", "or test Wi-Fi Scan", "Retry");
+            break;
+        case ROOM_RADAR_ERROR_REPLY:
+            radar_panel(title, "Radar command rejected", "Check companion image", "or reset ESP32-C6", "Retry");
+            break;
+        default:
+            radar_panel(title, "Incomplete radar reply", "ESP32 is responding", "Try again", "Retry");
+            break;
+        }
+        int key;
+        do { key = radar_key(portMAX_DELAY); }
+        while (key != BUTTON_OK_KP_ID && key != BUTTON_BACK_KP_ID);
+        if (key == BUTTON_BACK_KP_ID) return;
     }
     bool calibrated = false;
     unsigned baseline = 0;

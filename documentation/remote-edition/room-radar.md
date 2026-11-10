@@ -13,6 +13,10 @@ For a room test, set the M1 down, open **Room motion**, and press OK with the ro
 
 The LAN view discovers the station subnet automatically. It uses a single bound ICMP socket, tests at most 253 other addresses, and discards unrelated replies. There is no router login or model-specific dependency. Start it only on a network you manage. The motion view filters CSI frames from the associated access point, pings the IPv4 gateway for a bounded measurement, and returns a score and sample count. Back requests cancellation. The coprocessor also ends the job on its own timeout.
 
+## ESP32 status messages
+
+Revision 15 accepts a complete status line even when the separate acknowledgement is absent. It distinguishes a transport timeout, a rejected command, and an incomplete reply. A timeout or incomplete reply does not identify the installed ESP32 image. Try the ESP32-C6 reset in System and check Wi-Fi Scan before replacing the companion.
+
 ## Companion firmware
 
 The existing companion firmware can run the map and hotspot view. LAN and motion need the matching ESP32-C6 SPI build. The source overlay in `tools/room_radar` targets [M1 T-800 V0.4.0](https://github.com/dagnazty/M1-T-800/tree/d07b2f5e6ee1c43ba0f191774667b3ce7f91ddb2) and adds `AT+M1RADAR` without modifying the upstream repository. The [companion workflow](../../.github/workflows/room-radar-companion.yml) builds the `.bin` and matching `.bin.md5` as an Actions artifact. Keep both files together for the M1 ESP32 updater. Install the STM32 firmware and verify the two basic views first. The companion is a separate update.

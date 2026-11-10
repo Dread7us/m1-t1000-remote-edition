@@ -15,6 +15,16 @@ int main(void)
     assert(!room_radar_parse_result("ERROR\r\n", &result));
     assert(!room_radar_motion(10, 27) && room_radar_motion(10, 28));
 
+    assert(room_radar_status_data("+M1RADAR:1,0,0,0\r\n", &result));
+    assert(room_radar_status_data("+M1RADAR:1,2,32,40\r\nOK\r\nWIFI CONNECTED\r\n", &result));
+    assert(!room_radar_status_data("+M1RADAR:1,2,32,4", &result));
+    assert(!room_radar_status_data("+M1RADAR:1,2,32,40\r\nERROR\r\n", &result));
+    assert(room_radar_reply_status("SEND_ERR=4") == ROOM_RADAR_NO_REPLY);
+    assert(room_radar_reply_status("TIMEOUT(3s)") == ROOM_RADAR_NO_REPLY);
+    assert(room_radar_reply_status("\r\nERROR\r\n") == ROOM_RADAR_ERROR_REPLY);
+    assert(room_radar_reply_status("BOOK\r\n") == ROOM_RADAR_DATA_REPLY);
+    assert(room_radar_reply_status("OK\r\nWIFI GOT IP\r\n") == ROOM_RADAR_OK_REPLY);
+
     uint32_t first, last;
     assert(radar_subnet(0xc0a80105U, 0xffffff00U, &first, &last));
     assert(first == 0xc0a80101U && last == 0xc0a801feU);
