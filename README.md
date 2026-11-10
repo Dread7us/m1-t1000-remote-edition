@@ -45,6 +45,10 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ---
 
+## Room Radar
+
+**Revision 14** adds named Wi-Fi coverage readings and hotspot client counts. A separate ESP32-C6 companion build enables local LAN discovery and experimental Wi-Fi motion sensing. [Room Radar setup and limitations](documentation/remote-edition/room-radar.md).
+
 ## Infrared output and selection styling
 
 **Revision 13.** Parsed and raw signals share a frame start that primes timing before enabling the carrier and baseband. Replay reports a carrier or encoder failure instead of treating it as a completed send. Parsed timing storage is fixed, and Denon continuation frames contain only the entries they write. **System → Appearance → Selection** adds **Underline**. [Infrared changes and validation](documentation/remote-edition/ir-services.md).

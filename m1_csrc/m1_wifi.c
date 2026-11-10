@@ -19,6 +19,7 @@
 #include "stm32h5xx_hal.h"
 #include "main.h"
 #include "m1_wifi.h"
+#include "m1_room_radar.h"
 #include "m1_esp32_hal.h"
 //#include "control.h"
 #include "ctrl_api.h"
@@ -764,6 +765,35 @@ void wifi_survey_24g(void)
 		}
 	}
 } // void wifi_survey_24g(void)
+
+bool wifi_room_radar_scan(room_radar_reading_t *reading)
+{
+    ctrl_cmd_t request = CTRL_CMD_DEFAULT_REQ();
+    const wifi_scanlist_t *best = NULL;
+    if (wifi_run_scan(&request, 1)) {
+        for (int i = 0; i < request.u.wifi_ap_scan.count; ++i) {
+            const wifi_scanlist_t *ap = &request.u.wifi_ap_scan.out_list[i];
+            if (ap->channel < 1 || ap->channel > 14 || ap->rssi > 0 || ap->rssi < -127) continue;
+            if (!best || ap->rssi > best->rssi) best = ap;
+        }
+        if (best) {
+            reading->networks = (unsigned)request.u.wifi_ap_scan.count;
+            reading->channel = (unsigned)best->channel;
+            reading->rssi = best->rssi;
+            snprintf(reading->network, sizeof(reading->network), "%.32s", wifi_scan_ssid_label(best));
+        }
+    }
+    bool found = best != NULL;
+    wifi_free_scan_results(&request);
+    return found;
+}
+
+void wifi_room_radar(void)
+{
+    if (wifi_ensure_esp32_ready()) room_radar_run();
+    else m1_message_box(&m1_u8g2, "Room Radar", "Wi-Fi unavailable", "Try again", "OK");
+}
+
 
 
 

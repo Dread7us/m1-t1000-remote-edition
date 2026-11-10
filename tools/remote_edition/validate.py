@@ -949,5 +949,7 @@ assert rxinit.index('EDGE_DET_IDLE')<rxinit.index('HAL_TIM_IC_Start_IT')
 assert rxstop.index('HAL_NVIC_DisableIRQ')<rxstop.index('HAL_TIM_IC_DeInit')
 assert 'HAL_NVIC_ClearPendingIRQ' in rxstop and '__HAL_RCC_TIM2_FORCE_RESET' in rxinit
 
+exe=compile('room-radar',[repo/'tools/room_radar/test_room_radar.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

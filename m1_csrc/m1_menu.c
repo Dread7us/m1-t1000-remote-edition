@@ -32,6 +32,7 @@
 #include "m1_diag.h"
 #include "m1_storage.h"
 #include "m1_wifi.h"
+#include "m1_room_radar.h"
 #include "m1_bt.h"
 #include "m1_802154.h"
 #include "m1_link.h"
@@ -500,6 +501,10 @@ S_M1_Menu_t menu_Wifi_Scan_AP =
     "Scan 2.4G WiFi", wifi_scan_ap, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
+static S_M1_Menu_t menu_Room_Radar = {
+    "Room Radar", wifi_room_radar, NULL, NULL, 0, 0, NULL, NULL, NULL
+};
+
 S_M1_Menu_t menu_Wifi_Survey =
 {
     "2.4G Survey", wifi_survey_24g, NULL, NULL, 0, 0, NULL, NULL, NULL
@@ -618,11 +623,11 @@ S_M1_Menu_t menu_Wifi_Offensive_Tools =
 S_M1_Menu_t menu_Wifi =
 {
 #ifdef M1_APP_WIFI_OFFENSIVE_ENABLE
-    "WiFi 2.4G", menu_wifi_init, NULL, NULL, 13, 0, menu_m1_icon_wifi, NULL,
+    "WiFi 2.4G", menu_wifi_init, NULL, NULL, 14, 0, menu_m1_icon_wifi, NULL,
 #else
-    "WiFi 2.4G", menu_wifi_init, NULL, NULL, 11, 0, menu_m1_icon_wifi, NULL,
+    "WiFi 2.4G", menu_wifi_init, NULL, NULL, 12, 0, menu_m1_icon_wifi, NULL,
 #endif
-    {&menu_Wifi_Scan_AP, &menu_Wifi_Survey, &menu_Wifi_Health, &menu_802154_Zigbee,
+    {&menu_Wifi_Scan_AP, &menu_Wifi_Survey, &menu_Room_Radar, &menu_Wifi_Health, &menu_802154_Zigbee,
      &menu_802154_Thread, &menu_Wifi_Config, &menu_Wifi_Sync_RTC,
      &menu_Wifi_Status, &menu_Wifi_Mode, &menu_Wifi_Stats, &menu_Wifi_Disconnect,
 #ifdef M1_APP_WIFI_OFFENSIVE_ENABLE
@@ -634,8 +639,8 @@ S_M1_Menu_t menu_Wifi =
 #else
 S_M1_Menu_t menu_Wifi =
 {
-    "WiFi 2.4G", menu_wifi_init, NULL, NULL, 6, 0, menu_m1_icon_wifi, NULL,
-    {&menu_Wifi_Scan_AP, &menu_Wifi_Survey, &menu_Wifi_Health,
+    "WiFi 2.4G", menu_wifi_init, NULL, NULL, 7, 0, menu_m1_icon_wifi, NULL,
+    {&menu_Wifi_Scan_AP, &menu_Wifi_Survey, &menu_Room_Radar, &menu_Wifi_Health,
      &menu_802154_Zigbee, &menu_802154_Thread, &menu_Wifi_Config}
 };
 #endif

@@ -1,0 +1,59 @@
+name: Room Radar companion
+
+on:
+  push:
+    paths:
+      - tools/room_radar/**
+      - .github/workflows/room-radar-companion.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: dagnazty/M1-T-800
+          ref: d07b2f5e6ee1c43ba0f191774667b3ce7f91ddb2
+          path: companion
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flex bison gperf cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+      - name: Configure the M1 SPI target
+        run: |
+          python tools/room_radar/apply_companion.py companion
+          mkdir -p companion/build
+          printf '%s\n' '{"platform":"PLATFORM_ESP32C6","module":"ESP32C6-SPI","silence":0}' > companion/build/module_info.json
+          printf '%s\n' '#pragma once' '#define CONFIG_ESP_AT_OTA_TOKEN_ESP32C6_4MB ""' '#define CONFIG_ESP_AT_OTA_SSL_TOKEN_ESP32C6_4MB ""' > companion/components/at/private_include/at_ota_token.h
+      - name: Install the pinned ESP-IDF toolchain
+        working-directory: companion
+        env:
+          HAS_IDF_PREREQUISITES: '1'
+        run: |
+          ./build.py install
+          "$HOME/.espressif/python_env/idf5.1_py3.10_env/bin/pip" install 'idf-component-manager>=2,<3'
+      - name: Build and verify CSI configuration
+        working-directory: companion
+        run: |
+          ./build.py build
+          grep -qx 'CONFIG_ESP_WIFI_CSI_ENABLED=y' sdkconfig
+          test -f build/factory/factory_ESP32C6-SPI.bin
+          mkdir -p radar-output
+          cp build/factory/factory_ESP32C6-SPI.bin radar-output/m1-room-radar-c6.bin
+          md5sum radar-output/m1-room-radar-c6.bin | cut -d' ' -f1 | tr -d '\n' | tr '[:lower:]' '[:upper:]' > radar-output/m1-room-radar-c6.bin.md5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: m1-room-radar-c6
+          path: companion/radar-output/
+          if-no-files-found: error
