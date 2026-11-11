@@ -226,18 +226,33 @@ static int32_t write_data_to_spi_task_tx_ring_buf(const void* data, size_t size)
 // notify slave to recv data
 static void notify_slave_to_recv(void)
 {
+    spi_mutex_lock();
     if (initiative_send_flag == 0)
     {
-        spi_mutex_lock();
-        uint32_t tmp_send_len = xStreamBufferBytesAvailable(spi_master_tx_ring_buf);
-        if (tmp_send_len > 0)
+        uint32_t pending = xStreamBufferBytesAvailable(spi_master_tx_ring_buf);
+        if (pending > 0)
         {
-            plan_send_len = tmp_send_len > SPI_TRANS_MAX_LEN ? SPI_TRANS_MAX_LEN : tmp_send_len;
-            spi_master_request_to_write(current_send_seq + 1, plan_send_len); // to tell slave that the master want to write data
+            plan_send_len = pending > SPI_TRANS_MAX_LEN ? SPI_TRANS_MAX_LEN : pending;
+            spi_master_request_to_write(current_send_seq + 1, plan_send_len);
             initiative_send_flag = 1;
         }
-        spi_mutex_unlock();
     }
+    spi_mutex_unlock();
+}
+
+static void spi_reset_session(void)
+{
+    spi_mutex_lock();
+    xQueueReset(esp_spi_msg_queue);
+    xStreamBufferReset(spi_master_tx_ring_buf);
+    initiative_send_flag = 0;
+    plan_send_len = 0;
+    current_send_seq = 0;
+    current_recv_seq = 0;
+    current_uid = 0;
+    spi_AT_reset_response_channel();
+    xSemaphoreGive(esp_ctrl_req_sem);
+    spi_mutex_unlock();
 }
 
 
@@ -249,7 +264,7 @@ static void spi_trans_control_task(void* arg)
     esp_queue_elem_t *elem = NULL;
     char *app_resp = NULL;
 
-    uint8_t *trans_data = (uint8_t*)malloc(SPI_TRANS_MAX_LEN * sizeof(uint8_t));
+    uint8_t *trans_data = (uint8_t*)malloc((SPI_TRANS_MAX_LEN + 1U) * sizeof(uint8_t));
     if (trans_data == NULL)
     {
         M1_LOG_E(TAG, "malloc fail\r\n");
@@ -652,11 +667,7 @@ static void init_master_hd(spi_device_handle_t* spi)
 		 * used to leak the old ones on every re-init. Just flush session
 		 * state left over from before the reset so it cannot pair with the
 		 * fresh slave session. */
-		spi_AT_reset_response_channel();
-		xQueueReset(esp_spi_msg_queue);
-		xStreamBufferReset(spi_master_tx_ring_buf);
-		plan_send_len = 0;
-		xSemaphoreGive(esp_ctrl_req_sem);
+		spi_reset_session();
 	}
 
     spi_mutex_lock();
@@ -834,6 +845,7 @@ bool esp32_at_wake_wait(void)
 	if ( !esp32_main_init_done )
 		return false;
 
+	spi_reset_session();
 	esp_sleep_ms(200); /* C6 boot time before its SPI slave driver is up */
 
 	/* If handshake is already HIGH the rising edge was missed while EXTI was

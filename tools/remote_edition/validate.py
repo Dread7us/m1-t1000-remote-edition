@@ -983,5 +983,41 @@ int main(void)
 """
 (out/'room-radar-setup.c').write_text(setup);exe=compile('room-radar-setup',[out/'room-radar-setup.c']);print(run([exe]))
 
+spi_source=(repo/'Esp_spi_at/examples/at_spi_master/spi/stm32/main/esp_app_main.c').read_text(encoding='utf-8')
+spi_recovery=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#define SPI_TRANS_MAX_LEN 4096U
+static int locked, esp_spi_msg_queue=1, spi_master_tx_ring_buf=2, esp_ctrl_req_sem=3;
+static unsigned pending, queued, replies, requests, sends;
+static uint8_t initiative_send_flag, current_send_seq, current_recv_seq;
+static uint32_t plan_send_len;
+static int32_t current_uid;
+static void spi_mutex_lock(void){assert(!locked);locked=1;}
+static void spi_mutex_unlock(void){assert(locked);locked=0;}
+static void xQueueReset(int h){assert(locked && h==1);queued=0;}
+static void xStreamBufferReset(int h){assert(locked && h==2);pending=0;}
+static void xSemaphoreGive(int h){assert(locked && h==3);requests=1;}
+static void spi_AT_reset_response_channel(void){assert(locked);replies=0;}
+static uint32_t xStreamBufferBytesAvailable(int h){assert(locked && h==2);return pending;}
+static void spi_master_request_to_write(uint8_t seq, uint32_t len){assert(locked && seq==1 && len==4);sends++;}
+"""
+for sig in ['static void notify_slave_to_recv(void)', 'static void spi_reset_session(void)']:
+ spi_recovery+='\n'+function_body(spi_source,sig)
+spi_recovery+=r"""
+int main(void){
+ initiative_send_flag=1;plan_send_len=80;current_send_seq=42;current_recv_seq=27;current_uid=31;
+ pending=queued=replies=9;
+ notify_slave_to_recv();assert(sends==0);
+ spi_reset_session();assert(!pending && !queued && !replies && requests==1);
+ assert(!initiative_send_flag && !plan_send_len && !current_send_seq && !current_recv_seq && !current_uid);
+ pending=4;notify_slave_to_recv();notify_slave_to_recv();assert(sends==1 && plan_send_len==4);
+ puts("PASS: a stalled SPI session cannot block the first command after radio reset");return 0;
+}
+"""
+(out/'spi-recovery.c').write_text(spi_recovery)
+exe=compile('spi-recovery',[out/'spi-recovery.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')
