@@ -65,6 +65,7 @@ typedef enum
 	X_MENU_UPDATE_REFRESH
 } S_M1_Menu_Update_t;
 
+uint8_t m1_menu_order_index(const S_M1_Menu_t *menu, uint8_t row);
 void menu_main_handler_task(void *param);
 void subfunc_handler_task(void *param);
 extern TaskHandle_t subfunc_handler_task_hdl;

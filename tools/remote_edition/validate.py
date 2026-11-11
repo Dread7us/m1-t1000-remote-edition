@@ -234,7 +234,12 @@ int main(void) {
   assert(m1_ui_step(v,count,1,1)==(v+1)%count);
  }
  appearance_save();assert(!failures);
- m1_ui.style=2;m1_ui.outline=2;m1_ui.clock=0;m1_ui.wrap=0;appearance_save();assert(!failures);
+ assert(m1_sort_before("alpha",2,"Beta",1,M1_SORT_ALPHA));
+ assert(!m1_sort_before("alpha",2,"Beta",1,M1_SORT_OLDEST));
+ assert(m1_sort_before("Beta",3,"alpha",2,M1_SORT_NEWEST));
+ assert(m1_sort_before("alpha",2,"Beta",2,M1_SORT_NEWEST));
+ assert(!m1_sort_before("alpha",2,"Beta",1,M1_SORT_DEFAULT));
+ m1_ui.style=2;m1_ui.outline=2;m1_ui.clock=0;m1_ui.wrap=0;m1_ui.sort=M1_SORT_NEWEST;appearance_save();assert(!failures);
  m1_ui_preferences_t expected=m1_ui,defaults=M1_UI_DEFAULTS;
  m1_ui=defaults;appearance_load();assert(!memcmp(&m1_ui,&expected,sizeof(expected)));
  fail_write=1;m1_ui.style=0;appearance_save();assert(failures==1);

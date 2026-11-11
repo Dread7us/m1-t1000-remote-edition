@@ -1,3 +1,4 @@
+#include "m1_ui_theme.h"
 /* See COPYING.txt for license details. */
 #include "main.h"
 #include "m1_automation.h"
@@ -116,7 +117,7 @@ static bool wait_step(automation_step_t *step) {
     memset(step,0,sizeof(*step));step->type=AUTO_WAIT;step->wait_ms=values[result];snprintf(step->label,sizeof(step->label),"%s",rows[result]);return true;
 }
 static bool build_step(automation_step_t *step) {
-    static const char *const types[]={"IR remote button","Sub-GHz recording","Wait / delay"};
+    static const char *const types[]={"IR Remote Button","Sub-GHz Recording","Wait / Delay"};
     int type=actions("Add action",types,3);if(type<0)return false;
     memset(step,0,sizeof(*step));step->type=type+1;
     if(step->type==AUTO_WAIT)return wait_step(step);
@@ -161,7 +162,7 @@ static void editor(void) {
         int selected=pick_at(chain.name,count,cursor,true);
         if(selected<0){if(!dirty || save())return;continue;}cursor=selected;
         if((unsigned)selected==chain.count){automation_step_t step;if(build_step(&step)){chain.steps[chain.count++]=step;dirty=true;}continue;}
-        static const char *const menu[]={"Move earlier","Move later","Replace action","Rename action","Change wait","Duplicate action","Delete action"};
+        static const char *const menu[]={"Move Earlier","Move Later","Replace Action","Rename Action","Change Wait","Duplicate Action","Delete Action"};
         int action=actions(chain.steps[selected].label,menu,7);
         if(action==0){if(automation_move(&chain,selected,-1)){cursor--;dirty=true;}}
         else if(action==1){if(automation_move(&chain,selected,1)){cursor++;dirty=true;}}
@@ -223,16 +224,28 @@ void automation_run(void) {
     f_mkdir("0:/IR");f_mkdir(AUTO_DIR);
     for (;;) {
         DIR directory;FILINFO entry;unsigned count=0;
+        uint32_t dates[AUTO_FILES];
+        uint8_t order[AUTO_FILES];
         if(f_opendir(&directory,AUTO_DIR)!=FR_OK){error("SD card unavailable","Mount card in Storage");return;}
-        snprintf(rows[0],sizeof(rows[0]),"+ New automation");
+        snprintf(rows[0],sizeof(rows[0]),"+ New Automation");
         while(count<AUTO_FILES && f_readdir(&directory,&entry)==FR_OK && entry.fname[0]) {
             if((entry.fattrib&AM_DIR)||!extension(entry.fname,".chain"))continue;
             if(snprintf(files[count].path,sizeof(files[count].path),AUTO_DIR "/%s",entry.fname)>=(int)sizeof(files[count].path))continue;
             if(automation_load(files[count].path,&chain))snprintf(rows[count+1],sizeof(rows[0]),"%s",chain.name);
             else snprintf(rows[count+1],sizeof(rows[0]),"! %.*s",28,entry.fname);
-            ++count;
+            dates[count] = ((uint32_t)entry.fdate << 16) | entry.ftime;
+            unsigned row = count;
+            while (row && m1_sort_before(rows[count + 1], dates[count],
+                                         rows[order[row - 1] + 1], dates[order[row - 1]], m1_ui.sort)) {
+                order[row] = order[row - 1];
+                --row;
+            }
+            order[row] = count++;
+
         }
         f_closedir(&directory);
+        for (unsigned i = 0; i < count; ++i) memcpy(rows[AUTO_FILES + 1 + i], rows[order[i] + 1], sizeof(rows[0]));
+        for (unsigned i = 0; i < count; ++i) memcpy(rows[i + 1], rows[AUTO_FILES + 1 + i], sizeof(rows[0]));
         int selected=pick_at("Automations",count+1,0,false);if(selected<0)return;
         if(!selected) {
             if(count==AUTO_FILES){error("32 automations saved","Delete one to add more");continue;}
@@ -241,10 +254,10 @@ void automation_run(void) {
             if(!fresh_path(current)||!save())continue;
             editor();continue;
         }
-        snprintf(current,sizeof(current),"%s",files[selected-1].path);
+        snprintf(current,sizeof(current),"%s",files[order[selected-1]].path);
         if(!automation_load(current,&chain)){error("Invalid automation","Restore its .bak on PC");continue;}
         for (;;) {
-            static const char *const menu[]={"Run sequence","Edit steps","Rename","Duplicate","Delete"};
+            static const char *const menu[]={"Run Sequence","Edit Steps","Rename","Duplicate","Delete"};
             int action=actions(chain.name,menu,5);if(action<0)break;
             if(action==0)execute();else if(action==1)editor();
             else if(action==2){char name[32];if(m1_vkb_get_filename("Automation name",chain.name,name)){snprintf(chain.name,sizeof(chain.name),"%s",name);save();}}

@@ -236,12 +236,12 @@ void m1_gui_menu_update(const S_M1_Menu_t *phmenu, uint8_t sel_item, uint8_t dir
 	} // else if ( direction==MENU_UPDATE_RESTORE )
 	for (run=0; run<n_items; run++)
 	{
-		if (phmenu->submenu[run] == NULL) {
+		if (phmenu->submenu[m1_menu_order_index(phmenu, run)] == NULL) {
 			/* Should never happen, but prevent crash */
 			psubmenu[run] = "[ERROR]";
 			continue;
 		}
-		psubmenu[run] = phmenu->submenu[run]->title;
+		psubmenu[run] = phmenu->submenu[m1_menu_order_index(phmenu, run)]->title;
 	}
 	menu_level_id = (menu_level==0)?0:1;
 	m1_gui_submenu_update(psubmenu, n_items, sel_item, direction);
@@ -480,11 +480,11 @@ uint8_t m1_gui_submenu_update(const char *phmenu[], uint8_t num_items, uint8_t s
 
 		if ( menu_level_id==0 )
 		{
-			if (this_gui_menu->submenu[run - 1]->icon_ptr != NULL)
+			if (this_gui_menu->submenu[m1_menu_order_index(this_gui_menu, run - 1)]->icon_ptr != NULL)
 			{
 				u8g2_DrawXBMP(&m1_u8g2, MENU_MAIN_ROW_ICON_X, row_box_y + 1,
 				              MAIN_MENU_ICON_WIDTH, MAIN_MENU_ICON_HEIGHT,
-				              this_gui_menu->submenu[run - 1]->icon_ptr);
+				              this_gui_menu->submenu[m1_menu_order_index(this_gui_menu, run - 1)]->icon_ptr);
 			}
 		}
 

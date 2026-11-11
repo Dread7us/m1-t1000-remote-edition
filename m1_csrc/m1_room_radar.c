@@ -215,7 +215,7 @@ static void show_reading(const room_radar_reading_t *row, const char *footer)
 {
     char info[32];
     snprintf(info, sizeof(info), "%d dBm  Ch %u  APs %u", row->rssi, row->channel, row->networks);
-    radar_panel("Wi-Fi map", row->room, row->network, info, footer);
+    radar_panel("Wi-Fi Map", row->room, row->network, info, footer);
 }
 
 static void radar_map(void)
@@ -228,9 +228,9 @@ static void radar_map(void)
     for (;;) {
         if (refresh) {
             snprintf(row.room, sizeof(row.room), "Spot %u", count + 1U);
-            radar_panel("Wi-Fi map", "Reading this spot", "Scanning 2.4 GHz", NULL, NULL);
+            radar_panel("Wi-Fi Map", "Reading this spot", "Scanning 2.4 GHz", NULL, NULL);
             if (!wifi_room_radar_scan(&row)) {
-                radar_panel("Wi-Fi map", "No valid reading", "Move closer to Wi-Fi", NULL, "Retry");
+                radar_panel("Wi-Fi Map", "No valid reading", "Move closer to Wi-Fi", NULL, "Retry");
                 int key = radar_key(portMAX_DELAY);
                 if (key == BUTTON_BACK_KP_ID) return;
                 continue;
@@ -256,7 +256,7 @@ static void radar_map(void)
         if (key != BUTTON_OK_KP_ID) continue;
         if (!live) {live = true; refresh = true; continue;}
         if (!map_save(&row)) {
-            radar_panel("Wi-Fi map", "Reading not saved", "Check mounted SD", NULL, NULL);
+            radar_panel("Wi-Fi Map", "Reading not saved", "Check mounted SD", NULL, NULL);
             wait_back();
         } else {
             count = map_load();
@@ -298,15 +298,15 @@ static void radar_hotspot(void)
         char previous_mode = mode && mode[8] >= '0' && mode[8] <= '3' ? mode[8] : '1';
         bool active = previous_mode == '2' || previous_mode == '3';
         if (!active) {
-            radar_panel("Hotspot clients", "Start an M1 hotspot", "Join it from your phone", "Name: M1-Radar", "Start");
+            radar_panel("Hotspot Clients", "Start an M1 hotspot", "Join it from your phone", "Name: M1-Radar", "Start");
         } else if (radar_at("AT+CWLIF\r\n")) {
             unsigned count = 0;
             for (const char *p = reply; (p = strstr(p, "+CWLIF:")); p += 7) ++count;
             char line[26];
             snprintf(line, sizeof(line), "DHCP clients: %u", count);
-            radar_panel("Hotspot clients", line, "Connected to M1 AP", "Static IPs may be absent", "Rescan");
+            radar_panel("Hotspot Clients", line, "Connected to M1 AP", "Static IPs may be absent", "Rescan");
         } else {
-            radar_panel("Hotspot clients", "List unavailable", "Check M1 hotspot", NULL, "Retry");
+            radar_panel("Hotspot Clients", "List unavailable", "Check M1 hotspot", NULL, "Retry");
         }
         int key;
         do { key = radar_key(portMAX_DELAY); } while (key != BUTTON_OK_KP_ID && key != BUTTON_BACK_KP_ID);
@@ -321,7 +321,7 @@ static void radar_hotspot(void)
 /* The coprocessor runs bounded jobs. This screen polls and can cancel either job. */
 static bool radar_job(unsigned operation, room_radar_result_t *result, bool *cancelled)
 {
-    const char *title = operation == 1U ? "Room motion" : "LAN devices";
+    const char *title = operation == 1U ? "Room Motion" : "LAN Devices";
     const char *command = operation == 1U ? "AT+M1RADAR=1\r\n" : "AT+M1RADAR=2\r\n";
     *cancelled = false;
     if (!radar_at(command)) return false;
@@ -351,7 +351,7 @@ static bool radar_job(unsigned operation, room_radar_result_t *result, bool *can
 
 static void radar_measure(unsigned operation)
 {
-    const char *title = operation == 1U ? "Room motion" : "LAN devices";
+    const char *title = operation == 1U ? "Room Motion" : "LAN Devices";
     room_radar_result_t result;
     room_radar_reply_t status;
     bool recovered = false;
@@ -431,7 +431,7 @@ static void radar_measure(unsigned operation)
 
 static void radar_diagnostics(void)
 {
-    radar_panel("Radio status", "Checking Wi-Fi", NULL, NULL, NULL);
+    radar_panel("Radio Status", "Checking Wi-Fi", NULL, NULL, NULL);
     wifi_room_radar_prepare();
     bool online = radar_at("AT\r\n");
     room_radar_result_t result;
@@ -441,7 +441,7 @@ static void radar_diagnostics(void)
                          status == ROOM_RADAR_ERROR_REPLY ? "Standard radio firmware" :
                          online ? "Radar reply unavailable" : "Radio did not reply";
     radar_save_status(detail);
-    radar_panel("Radio status", online ? "Wi-Fi responded" : "Wi-Fi unavailable", detail, NULL, NULL);
+    radar_panel("Radio Status", online ? "Wi-Fi responded" : "Wi-Fi unavailable", detail, NULL, NULL);
     wait_back();
 }
 
@@ -468,8 +468,8 @@ static unsigned radar_menu(const char *title, const char *const items[3], unsign
 
 void room_radar_run(void)
 {
-    static const char *const home[] = {"Wi-Fi map", "Room motion", "Advanced"};
-    static const char *const advanced[] = {"Radio status", "LAN devices", "Hotspot clients"};
+    static const char *const home[] = {"Wi-Fi Map", "Room Motion", "Advanced"};
+    static const char *const advanced[] = {"Radio Status", "LAN Devices", "Hotspot Clients"};
     unsigned selected = 0;
     unsigned advanced_selected = 0;
     for (;;) {

@@ -1,3 +1,4 @@
+#include "m1_ui_theme.h"
 /* See COPYING.txt for license details. */
 
 /*
@@ -76,6 +77,8 @@ typedef enum {
 
 static char     s_remote_names[IR_CUSTOM_MAX_REMOTES][IR_CUSTOM_DISP_NAME_LEN];
 static uint16_t s_remote_count;
+static uint8_t s_remote_order[IR_CUSTOM_MAX_REMOTES];
+static uint32_t s_remote_date[IR_CUSTOM_MAX_REMOTES];
 static char s_remote_paths[IR_CUSTOM_MAX_REMOTES][IR_CUSTOM_PATH_MAX_LEN];
 
 /* Button-name cache for the edit list (one remote at a time). */
@@ -313,7 +316,16 @@ static void ir_custom_scan_remotes(void)
                 info.fname[n-3] != '.' || (info.fname[n-2] != 'i' && info.fname[n-2] != 'I') || (info.fname[n-1] != 'r' && info.fname[n-1] != 'R')) continue;
             if (snprintf(s_remote_paths[s_remote_count],IR_CUSTOM_PATH_MAX_LEN,"%s/%s",folders[f],info.fname) >= IR_CUSTOM_PATH_MAX_LEN) continue;
             snprintf(s_remote_names[s_remote_count],IR_CUSTOM_DISP_NAME_LEN,"%.*s",(int)(n-3),info.fname);
-            s_remote_count++;
+            unsigned index = s_remote_count++;
+            s_remote_date[index] = ((uint32_t)info.fdate << 16) | info.ftime;
+            unsigned row = index;
+            while (row && m1_sort_before(s_remote_names[index], s_remote_date[index],
+                                         s_remote_names[s_remote_order[row - 1]],
+                                         s_remote_date[s_remote_order[row - 1]], m1_ui.sort)) {
+                s_remote_order[row] = s_remote_order[row - 1];
+                --row;
+            }
+            s_remote_order[row] = index;
         }
         f_closedir(&directory);
     }
@@ -327,7 +339,7 @@ static const char *ir_custom_item_text(uint16_t idx)
 {
 	if (idx == 0)
 		return IR_CUSTOM_NEW_LABEL;
-	return s_remote_names[idx - 1];
+	return s_remote_names[s_remote_order[idx - 1]];
 }
 
 /*============================================================================*/
@@ -1254,8 +1266,8 @@ void ir_custom_run(void)
 			else
 			{
 				char path[IR_CUSTOM_PATH_MAX_LEN];
-				snprintf(path,sizeof(path),"%s",s_remote_paths[selection - 1]);
-				ir_custom_open_remote(path, s_remote_names[selection - 1]);
+				snprintf(path,sizeof(path),"%s",s_remote_paths[s_remote_order[selection - 1]]);
+				ir_custom_open_remote(path, s_remote_names[s_remote_order[selection - 1]]);
 			}
 
 			/* A remote may have been created; re-scan and clamp selection. */

@@ -1174,14 +1174,15 @@ void settings_backlight(void)
 
 /* Appearance preferences intentionally use a separate, versioned file. */
 #define APPEARANCE_PATH "0:/System/appearance.cfg"
-static const char *appearance_labels[] = {"Theme", "Selection", "Clock", "Time format", "Battery", "Animation", "Menu wrap", "Reset theme"};
-static const uint8_t appearance_counts[] = {3, 3, 2, 2, 2, 2, 2};
+static const char *appearance_labels[] = {"Theme", "Selection", "Clock", "Time Format", "Battery", "Animation", "Menu Wrap", "Sort By", "Reset Theme"};
+static const uint8_t appearance_counts[] = {3, 3, 2, 2, 2, 2, 2, 4};
 static uint8_t *appearance_field(unsigned i) {
     switch (i) {
     case 0: return &m1_ui.style; case 1: return &m1_ui.outline;
     case 2: return &m1_ui.clock; case 3: return &m1_ui.clock_12h;
     case 4: return &m1_ui.battery; case 5: return &m1_ui.animations;
-    default: return &m1_ui.wrap;
+    case 6: return &m1_ui.wrap;
+    default: return &m1_ui.sort;
     }
 }
 static void appearance_load(void) {
@@ -1192,7 +1193,7 @@ static void appearance_load(void) {
     if (result != FR_OK) return;
     text[br] = 0;
     if (strncmp(text, "version=1\n", 10)) return;
-    for (unsigned i=0; i<7; ++i) {
+    for (unsigned i=0; i<8; ++i) {
         char key[8]; snprintf(key, sizeof(key), "\np%u=", i);
         char *value = strstr(text, key);
         if (value && strlen(value) >= 5 && value[4] >= '0' && value[4] < '0'+appearance_counts[i] &&
@@ -1202,7 +1203,7 @@ static void appearance_load(void) {
 static void appearance_save(void) {
     FIL file; UINT bw; char text[160];
     int n=snprintf(text, sizeof(text), "version=1\n");
-    for (unsigned i=0; i<7; ++i) n+=snprintf(text+n, sizeof(text)-n, "p%u=%u\n", i, *appearance_field(i));
+    for (unsigned i=0; i<8; ++i) n+=snprintf(text+n, sizeof(text)-n, "p%u=%u\n", i, *appearance_field(i));
     f_mkdir("0:/System");
     if (f_open(&file, APPEARANCE_PATH ".tmp", FA_WRITE|FA_CREATE_ALWAYS) != FR_OK) goto failed;
     FRESULT result=f_write(&file, text, n, &bw);
@@ -1223,18 +1224,19 @@ failed:
 void settings_appearance(void) {
     uint8_t sel=0;
     for (;;) {
+        static const char *sort_modes[]={"A-Z", "Newest", "Oldest", "Default"};
         static const char *styles[]={"Classic", "Soft", "Minimal"};
         static const char *selections[]={"Filled", "Outline", "Underline"};
         m1_u8g2_firstpage();
         m1_draw_header_bar(&m1_u8g2, "Appearance", NULL);
         u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
         uint8_t start=sel < 3 ? 0 : sel-2;
-        for (uint8_t row=0; row<3 && start+row<8; ++row) {
+        for (uint8_t row=0; row<3 && start+row<9; ++row) {
             uint8_t i=start+row; int y=15+row*12;
             m1_ui_selection(&m1_u8g2, 2, y, 124, 11, i==sel);
             m1_draw_text(&m1_u8g2, 6, y+8, 66, appearance_labels[i], TEXT_ALIGN_LEFT);
             const char *value = i==0 ? styles[m1_ui.style] : i==1 ? selections[m1_ui.outline] :
-                i==3 ? (m1_ui.clock_12h ? "12h":"24h") : i==7 ? "OK" : (*appearance_field(i) ? "On":"Off");
+                i==3 ? (m1_ui.clock_12h ? "12h":"24h") : i==7 ? sort_modes[m1_ui.sort] : i==8 ? "OK" : (*appearance_field(i) ? "On":"Off");
             m1_draw_text(&m1_u8g2, 72, y+8, 50, value, TEXT_ALIGN_RIGHT);
         }
         m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Save", "Change", button_ok_8x8);
@@ -1243,10 +1245,10 @@ void settings_appearance(void) {
         if (xQueueReceive(main_q_hdl, &event, portMAX_DELAY)!=pdTRUE || event.q_evt_type!=Q_EVENT_KEYPAD) continue;
         if (xQueueReceive(button_events_q_hdl, &key, 0)!=pdTRUE) continue;
         if (key.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK) { appearance_save(); xQueueReset(main_q_hdl); return; }
-        if (key.event[BUTTON_UP_KP_ID]==BUTTON_EVENT_CLICK) sel=m1_ui_step(sel,8,-1,m1_ui.wrap);
-        else if (key.event[BUTTON_DOWN_KP_ID]==BUTTON_EVENT_CLICK) sel=m1_ui_step(sel,8,1,m1_ui.wrap);
+        if (key.event[BUTTON_UP_KP_ID]==BUTTON_EVENT_CLICK) sel=m1_ui_step(sel,9,-1,m1_ui.wrap);
+        else if (key.event[BUTTON_DOWN_KP_ID]==BUTTON_EVENT_CLICK) sel=m1_ui_step(sel,9,1,m1_ui.wrap);
         else if (key.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK || key.event[BUTTON_RIGHT_KP_ID]==BUTTON_EVENT_CLICK || key.event[BUTTON_LEFT_KP_ID]==BUTTON_EVENT_CLICK) {
-            if (sel==7) {
+            if (sel==8) {
                 if (key.event[BUTTON_OK_KP_ID]==BUTTON_EVENT_CLICK && m1_message_box_choice(&m1_u8g2,"Reset appearance?","Your remotes stay", "unchanged", "Cancel\nReset")==2) {
                     m1_ui_preferences_t defaults=M1_UI_DEFAULTS; m1_ui=defaults;
                 }

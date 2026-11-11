@@ -3,7 +3,7 @@
   "maintainer": "Dread7us",
   "upstream_repository": "https://github.com/dagnazty/M1_T-1000",
   "upstream_commit": "268d8ca1f9ac9bb568ed54f869af83f3bf151c1e",
-  "edition_revision": "18",
+  "edition_revision": "19",
   "revision_4_hardware_status": "Owner confirmed boot and Right skips Mute to Volume Up",
   "revision_3_hardware_status": "Owner confirmed boot, avatar splash and clean title on the M1",
   "revision_2_hardware_status": "Owner confirmed boot and correct semantic remote layout; grouped learning awaits physical confirmation",
@@ -28,5 +28,5 @@
   "revision_15_hardware_status": "Room Radar status parser accepts complete data without a separate ACK and diagnoses missing or rejected responses. Physical verification pending.",
   "revision_16_hardware_status": "Firmware build and native setup tests passed. Automatic Wi-Fi connection, in-app credentials, LAN start and motion calibration await on-device confirmation.",
   "revision_17_hardware_status": "Radio recovery clears stalled host SPI transfers after a reset or power cycle. Build and host regression checks passed. Device retest pending.",
-  "revision_18_hardware_status": "Stock Wi-Fi scan returned after restoring the pre-Room Radar radio image. Simplified menu and capability fallback pass host checks. Custom radio boot and sensing remain unverified."
+  "revision_18_hardware_status": "Owner confirmed Wi-Fi responded and standard radio firmware detected."
 }

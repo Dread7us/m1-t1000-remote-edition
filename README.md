@@ -89,6 +89,8 @@ Reorder, rename, replace, duplicate, or delete actions and chains. Repeat a butt
 
 ## Appearance
 
+**Revision 19.** In **System > Appearance > Sort By**, choose A-Z, Newest, Oldest, or Default. Dates use file modification time for saved remotes and automations. Standard menus use A-Z in date modes. Task-specific screens keep their workflow order.
+
 <img src="documentation/remote-edition/themes-preview.png" alt="Classic, Soft, and Minimal themes with filled and outlined selection" width="960">
 
 **Revision 5 · Boot and Appearance changes/saving confirmed on the M1.** Shared menus, dialogs, status panels, and saved appearance preferences form the first stage of the interface refresh. [Settings, coverage, and next stages](documentation/remote-edition/appearance.md).

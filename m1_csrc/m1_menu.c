@@ -321,12 +321,12 @@ S_M1_Menu_t menu_GPIO_GPIO_Manual_Control =
 
 S_M1_Menu_t menu_GPIO_3_3V_On_GPIO =
 {
-    "3.3V power", gpio_3_3v_on_gpio, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "3.3V Power", gpio_3_3v_on_gpio, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 S_M1_Menu_t menu_GPIO_5V_On_GPIO =
 {
-    "5V power", gpio_5v_on_gpio, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "5V Power", gpio_5v_on_gpio, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 S_M1_Menu_t menu_GPIO_Field_Detect =
@@ -411,7 +411,7 @@ S_M1_Menu_t menu_Setting_Firmware_Update_Image_File =
 
 S_M1_Menu_t menu_Setting_Firmware_Update_Start =
 {
-    "Firmware update", firmware_update_start, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "Firmware Update", firmware_update_start, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 S_M1_Menu_t menu_Setting_Firmware_Swap_Banks =
@@ -464,17 +464,17 @@ S_M1_Menu_t menu_Settings_LCD_and_Notifications =
 
 S_M1_Menu_t menu_Settings_System =
 {
-    "Device options", settings_system, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "Device Options", settings_system, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 S_M1_Menu_t menu_Setting_Firmware_Update =
 {
-    "Firmware update", firmware_update_init, firmware_update_exit, NULL, 3, 0, NULL, firmware_update_gui_update, {&menu_Setting_Firmware_Update_Image_File, &menu_Setting_Firmware_Update_Start, &menu_Setting_Firmware_Swap_Banks}
+    "Firmware Update", firmware_update_init, firmware_update_exit, NULL, 3, 0, NULL, firmware_update_gui_update, {&menu_Setting_Firmware_Update_Image_File, &menu_Setting_Firmware_Update_Start, &menu_Setting_Firmware_Swap_Banks}
 };
 
 S_M1_Menu_t menu_Setting_ESP32 =
 {
-    "ESP32 update", setting_esp32_init, setting_esp32_exit, setting_esp32_xkey_handler, 5, 0, NULL, setting_esp32_gui_update, {&menu_Setting_ESP32_Image_File, &menu_Setting_ESP32_Start_Address, &menu_Setting_ESP32_Verify_Image, &menu_Setting_ESP32_Firmware_Update, &menu_Setting_ESP32_C6_Reset}
+    "ESP32 Update", setting_esp32_init, setting_esp32_exit, setting_esp32_xkey_handler, 5, 0, NULL, setting_esp32_gui_update, {&menu_Setting_ESP32_Image_File, &menu_Setting_ESP32_Start_Address, &menu_Setting_ESP32_Verify_Image, &menu_Setting_ESP32_Firmware_Update, &menu_Setting_ESP32_C6_Reset}
 };
 
 S_M1_Menu_t menu_Settings_About =
@@ -853,6 +853,26 @@ static void menu_main_init(void)
  * This function handles all tasks of the M1 main menu.
 */
 /*============================================================================*/
+uint8_t m1_menu_order_index(const S_M1_Menu_t *menu, uint8_t row)
+{
+    if (m1_ui.sort == M1_SORT_DEFAULT || menu->gui_menu_update || menu->xkey_handler ||
+        menu->num_submenu_items > SUB_MENU_ITEMS_MAX || row >= menu->num_submenu_items)
+        return row;
+
+    uint8_t order[SUB_MENU_ITEMS_MAX];
+    for (uint8_t i = 0; i < menu->num_submenu_items; ++i) {
+        if (!menu->submenu[i]) return row;
+        uint8_t j = i;
+        while (j && m1_name_compare(menu->submenu[i]->title,
+                                    menu->submenu[order[j - 1]]->title) < 0) {
+            order[j] = order[j - 1];
+            --j;
+        }
+        order[j] = i;
+    }
+    return order[row];
+}
+
 void menu_main_handler_task(void *param)
 {
 	uint8_t key, sel_item, n_items;
@@ -948,12 +968,14 @@ void menu_main_handler_task(void *param)
 	    				{
 	    					if ( m1_device_stat.op_mode==M1_OPERATION_MODE_MENU_ON )
 	    					{
-	                            n_items = pthis_submenu->submenu[menu_ctl.menu_item_active]->num_submenu_items;  // get the number of submenu items of the selected item
-	                            menu_ctl.last_selected_items[menu_ctl.menu_level] = menu_ctl.menu_item_active; // save the selected item before going the next menu level
+	                            uint8_t item_index = m1_menu_order_index(pthis_submenu, menu_ctl.menu_item_active);
+	                            const S_M1_Menu_t *item = pthis_submenu->submenu[item_index];
+	                            n_items = item->num_submenu_items;  // get the number of submenu items of the selected item
+	                            menu_ctl.last_selected_items[menu_ctl.menu_level] = item_index; // save the selected item before going the next menu level
 	                            if ( n_items != 0 ) // This menu item has another submenu?
 	                            {
 	                                menu_ctl.menu_level++; // go to next menu level
-	                                menu_ctl.main_menu_ptr[menu_ctl.menu_level] = pthis_submenu->submenu[menu_ctl.menu_item_active];
+	                                menu_ctl.main_menu_ptr[menu_ctl.menu_level] = item;
 	                                pthis_submenu = menu_ctl.main_menu_ptr[menu_ctl.menu_level];
 	                                menu_ctl.this_func = pthis_submenu->sub_func;
 	                            	menu_ctl.num_menu_items = n_items; // update this field
@@ -967,10 +989,10 @@ void menu_main_handler_task(void *param)
 	                                menu_update_stat = MENU_UPDATE_RESET;
 	                            } // if ( n_items != 0 )
 
-	                            else if ( pthis_submenu->submenu[menu_ctl.menu_item_active]->sub_func != NULL ) // This menu item has no submenu. Does it have a function to run?
+	                            else if ( item->sub_func != NULL ) // This menu item has no submenu. Does it have a function to run?
 	                            {
 	                                m1_device_stat.op_mode = M1_OPERATION_MODE_SUB_FUNC_RUNNING;
-	                                m1_device_stat.sub_func = pthis_submenu->submenu[menu_ctl.menu_item_active]->sub_func; // let schedule to run the function of the selected submenu item
+	                                m1_device_stat.sub_func = item->sub_func; // let schedule to run the function of the selected submenu item
 	                                //this_button_status.event[key].event = BUTTON_EVENT_IDLE; // clear before return
 	                                // Notify the sub-function handler
 	                                xTaskNotify(subfunc_handler_task_hdl, 0, eNoAction);
@@ -978,8 +1000,11 @@ void menu_main_handler_task(void *param)
 	                                xTaskNotifyWait(0, 0, NULL, portMAX_DELAY);
 	                        		m1_device_stat.op_mode = M1_OPERATION_MODE_MENU_ON;
 	                                // Return from sub-function. Let update GUI.
-	                                sel_item = menu_ctl.menu_item_active;
-	                                menu_update_stat = MENU_UPDATE_REFRESH; // The sub-function may have changed the GUI. It needs update.
+	                                for (sel_item = 0; sel_item < menu_ctl.num_menu_items; ++sel_item)
+                                        if (m1_menu_order_index(pthis_submenu, sel_item) == item_index) break;
+                                    if (sel_item >= menu_ctl.num_menu_items) sel_item = 0;
+                                    menu_ctl.menu_item_active = sel_item;
+                                    menu_update_stat = MENU_UPDATE_REFRESH; // The sub-function may have changed the GUI. It needs update.
 	                            } // else if ( menu_ctl.this_function != NULL )
 
 	                            else // This case should never happen. It doesn't exist!
@@ -1059,12 +1084,15 @@ void menu_main_handler_task(void *param)
 									pthis_submenu->deinit_func();
 							}
 							menu_ctl.menu_level--;
-							menu_ctl.menu_item_active = menu_ctl.last_selected_items[menu_ctl.menu_level];
+							uint8_t prior_index = menu_ctl.last_selected_items[menu_ctl.menu_level];
 							pthis_submenu = menu_ctl.main_menu_ptr[menu_ctl.menu_level];
 							menu_ctl.this_func = pthis_submenu->sub_func;
 							menu_ctl.num_menu_items = pthis_submenu->num_submenu_items;
 							n_items = menu_ctl.num_menu_items;
-							sel_item = menu_ctl.menu_item_active;
+                            for (sel_item = 0; sel_item < n_items; ++sel_item)
+                                if (m1_menu_order_index(pthis_submenu, sel_item) == prior_index) break;
+                            if (sel_item >= n_items) sel_item = 0;
+                            menu_ctl.menu_item_active = sel_item;
 							if ( menu_ctl.this_func != NULL )
 								menu_ctl.this_func();
 							if ( menu_ctl.menu_level==0 ) // returned to main menu
