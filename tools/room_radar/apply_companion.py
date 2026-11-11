@@ -28,7 +28,6 @@ settings = config.read_bytes()
 overrides = {
     b"CONFIG_ESP_WIFI_CSI_ENABLED": b"y",
     b"CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM": b"6",
-    b"CONFIG_LWIP_RAW": b"y",
 }
 lines = [line for line in settings.splitlines()
          if not any(line.startswith(key + b"=") or line == b"# " + key + b" is not set"
