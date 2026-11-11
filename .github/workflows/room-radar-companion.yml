@@ -47,7 +47,12 @@ jobs:
         working-directory: companion
         run: |
           ./build.py build
-          grep -qx 'CONFIG_ESP_WIFI_CSI_ENABLED=y' sdkconfig
+          for setting in CONFIG_AT_BASE_ON_SPI=y CONFIG_SPI_MODE=1 CONFIG_SPI_SCLK_PIN=7 \
+            CONFIG_SPI_MOSI_PIN=12 CONFIG_SPI_MISO_PIN=13 CONFIG_SPI_CS_PIN=15 \
+            CONFIG_SPI_HANDSHAKE_PIN=14 CONFIG_ESP_WIFI_CSI_ENABLED=y \
+            CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6 CONFIG_LWIP_RAW=y; do
+            grep -Fqx "$setting" sdkconfig
+          done
           test -f build/factory/factory_ESP32C6-SPI.bin
           mkdir -p radar-output
           cp build/factory/factory_ESP32C6-SPI.bin radar-output/m1-room-radar-c6.bin

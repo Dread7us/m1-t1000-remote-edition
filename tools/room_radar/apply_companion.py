@@ -23,5 +23,15 @@ if b'#include "at_room_radar.inc"' not in source:
 for name in ("at_room_radar.inc", "radar_metric.h"):
     shutil.copyfile(assets / name, main / name)
 settings = config.read_bytes()
-if b"CONFIG_ESP_WIFI_CSI_ENABLED=y" not in settings:
-    config.write_bytes(settings.rstrip() + b"\n\nCONFIG_ESP_WIFI_CSI_ENABLED=y\n")
+# CSI adds a per-RX-buffer allocation. Use six buffers (the default block-ACK
+# window) so enabling CSI stays within the standard radio's RX memory budget.
+overrides = {
+    b"CONFIG_ESP_WIFI_CSI_ENABLED": b"y",
+    b"CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM": b"6",
+    b"CONFIG_LWIP_RAW": b"y",
+}
+lines = [line for line in settings.splitlines()
+         if not any(line.startswith(key + b"=") or line == b"# " + key + b" is not set"
+                    for key in overrides)]
+lines.extend(key + b"=" + value for key, value in overrides.items())
+config.write_bytes(b"\n".join(lines) + b"\n")
