@@ -1062,5 +1062,57 @@ int main(void)
 (out/'menu-viewport.c').write_text(viewport_test)
 exe=compile('menu-viewport',[out/'menu-viewport.c']);print(run([exe]))
 
+flash_protocol = (repo/'Esp32_serial_flasher/src/protocol_serial.c').read_text(encoding='utf-8')
+flash_retry = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+typedef enum { ESP_LOADER_SUCCESS, ESP_LOADER_ERROR_TIMEOUT } esp_loader_error_t;
+typedef struct {
+    struct { unsigned direction, command, size, checksum; } common;
+    uint32_t data_size, sequence_number;
+} data_command_t;
+typedef struct {
+    const void *cmd;
+    size_t cmd_size;
+    const uint8_t *data;
+    size_t data_size;
+} send_cmd_config;
+#define WRITE_DIRECTION 0
+#define FLASH_DATA 3
+#define CMD_SIZE(cmd) 16
+static uint32_t s_sequence_number;
+static unsigned attempt;
+static unsigned compute_checksum(const uint8_t *data, uint32_t size)
+{
+    assert(data && size == 4);
+    return 0;
+}
+static esp_loader_error_t send_cmd(const send_cmd_config *cfg)
+{
+    const data_command_t *cmd = cfg->cmd;
+    static const unsigned expected[] = {0, 0, 1, 1, 2};
+    assert(attempt < sizeof(expected) / sizeof(expected[0]));
+    assert(cmd->sequence_number == expected[attempt]);
+    ++attempt;
+    return (attempt == 1 || attempt == 3) ? ESP_LOADER_ERROR_TIMEOUT : ESP_LOADER_SUCCESS;
+}
+""" + function_body(flash_protocol, 'esp_loader_error_t loader_flash_data_cmd(const uint8_t *data, uint32_t size)') + r"""
+int main(void)
+{
+    const uint8_t block[4] = {0};
+    assert(loader_flash_data_cmd(block, sizeof(block)) == ESP_LOADER_ERROR_TIMEOUT);
+    assert(loader_flash_data_cmd(block, sizeof(block)) == ESP_LOADER_SUCCESS);
+    assert(loader_flash_data_cmd(block, sizeof(block)) == ESP_LOADER_ERROR_TIMEOUT);
+    assert(loader_flash_data_cmd(block, sizeof(block)) == ESP_LOADER_SUCCESS);
+    assert(loader_flash_data_cmd(block, sizeof(block)) == ESP_LOADER_SUCCESS);
+    puts("PASS: ESP32 flash retries retain the same block sequence until acknowledged");
+    return 0;
+}
+"""
+(out/'esp-flash-retry.c').write_text(flash_retry)
+exe=compile('esp-flash-retry',[out/'esp-flash-retry.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

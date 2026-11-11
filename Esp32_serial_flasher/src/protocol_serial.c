@@ -103,7 +103,7 @@ esp_loader_error_t loader_flash_data_cmd(const uint8_t *data, uint32_t size)
             .checksum = compute_checksum(data, size)
         },
         .data_size = size,
-        .sequence_number = s_sequence_number++,
+        .sequence_number = s_sequence_number,
     };
 
     const send_cmd_config cmd_config = {
@@ -113,7 +113,12 @@ esp_loader_error_t loader_flash_data_cmd(const uint8_t *data, uint32_t size)
         .data_size = size,
     };
 
-    return send_cmd(&cmd_config);
+    /* Retries must use the same flash address until the ROM acknowledges it. */
+    esp_loader_error_t result = send_cmd(&cmd_config);
+    if (result == ESP_LOADER_SUCCESS) {
+        ++s_sequence_number;
+    }
+    return result;
 }
 
 
