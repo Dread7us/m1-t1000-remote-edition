@@ -430,16 +430,25 @@ uint8_t m1_gui_submenu_update(const char *phmenu[], uint8_t num_items, uint8_t s
 			break;
 	} // switch ( direction )
 
-	/* Graphic work starts here */
-    u8g2_FirstPage(&m1_u8g2); // This call required for page drawing in mode 1
-	u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+    if (!n_items) return 0;
+    if (sel_item >= n_items) sel_item = n_items - 1;
+    const uint8_t visible = n_items < menu_window_sizes[menu_level_id]
+                            ? n_items : menu_window_sizes[menu_level_id];
+    const uint8_t last_top = n_items - visible + 1;
+    const uint8_t selected_row = sel_item + 1;
 
-	if ( n_items >= menu_window_sizes[menu_level_id] )
-		disp_window_bottom_row = disp_window_top_row + (menu_window_sizes[menu_level_id] - 1); // full window display
-	else
-		disp_window_bottom_row = disp_window_top_row + (n_items - 1); // partial window display
-	active_item = disp_window_top_row;
-	active_item += disp_window_active_row - 1;
+    /* Sorting and wrap changes can invalidate the previous viewport. */
+    if (!disp_window_top_row) disp_window_top_row = 1;
+    if (disp_window_top_row > last_top) disp_window_top_row = last_top;
+    if (selected_row < disp_window_top_row) disp_window_top_row = selected_row;
+    if (selected_row >= disp_window_top_row + visible)
+        disp_window_top_row = selected_row - visible + 1;
+    disp_window_active_row = selected_row - disp_window_top_row + 1;
+    disp_window_bottom_row = disp_window_top_row + visible - 1;
+    active_item = selected_row;
+
+    u8g2_FirstPage(&m1_u8g2);
+    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
 
 	header_title = (menu_level_id == 0) ? M1_PRODUCT_MARK : this_gui_menu->title;
 	m1_gui_draw_menu_header(header_title, sel_item, n_items);
@@ -935,12 +944,14 @@ void m1_ui_selection(u8g2_t *display, int x, int y, int w, int h, bool selected)
         return;
     }
     if (selected && !m1_ui.outline) {
-        if (m1_ui.style == 1) u8g2_DrawRBox(display, x, y, w, h, 2);
+        if (m1_ui.style == 1 && w >= 14 && h >= 9)
+            u8g2_DrawRBox(display, x, y, w, h, 4);
         else u8g2_DrawBox(display, x, y, w, h);
         u8g2_SetDrawColor(display, 0);
     } else {
         if (selected || m1_ui.style != 2) {
-            if (m1_ui.style == 1) u8g2_DrawRFrame(display, x, y, w, h, 2);
+            if (m1_ui.style == 1 && w >= 14 && h >= 9)
+                u8g2_DrawRFrame(display, x + 1, y, w - 2, h, 4);
             else u8g2_DrawFrame(display, x, y, w, h);
         }
         if (selected && m1_ui.outline && w > 6 && h > 6)

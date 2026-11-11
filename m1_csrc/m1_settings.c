@@ -1230,6 +1230,10 @@ void settings_appearance(void) {
         m1_u8g2_firstpage();
         m1_draw_header_bar(&m1_u8g2, "Appearance", NULL);
         u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
+        if (sel == 0) {
+            static const char *const theme_preview[] = {"Square Frames", "Rounded Frames", "Clean Rows"};
+            m1_draw_text(&m1_u8g2, 6, 49, 116, theme_preview[m1_ui.style], TEXT_ALIGN_LEFT);
+        }
         uint8_t start=sel < 3 ? 0 : sel-2;
         for (uint8_t row=0; row<3 && start+row<9; ++row) {
             uint8_t i=start+row; int y=15+row*12;

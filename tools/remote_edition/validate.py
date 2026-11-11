@@ -1025,5 +1025,42 @@ int main(void){
 (out/'spi-recovery.c').write_text(spi_recovery)
 exe=compile('spi-recovery',[out/'spi-recovery.c']);print(run([exe]))
 
+display_source = (src/'m1_display.c').read_text(encoding='utf-8')
+viewport_start = display_source.index('    if (!n_items) return 0;')
+viewport_end = display_source.index('    u8g2_FirstPage', viewport_start)
+viewport_test = r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+static uint8_t disp_window_top_row, disp_window_active_row;
+static const uint8_t menu_window_sizes[] = {4, 3};
+static unsigned menu_level_id;
+static uint8_t viewport(uint8_t n_items, uint8_t sel_item)
+{
+    uint8_t disp_window_bottom_row, active_item;
+""" + display_source[viewport_start:viewport_end] + r"""
+    assert(disp_window_top_row >= 1 && disp_window_bottom_row <= n_items);
+    assert(active_item == sel_item + 1);
+    assert(active_item >= disp_window_top_row && active_item <= disp_window_bottom_row);
+    assert(disp_window_active_row == active_item - disp_window_top_row + 1);
+    return 1;
+}
+int main(void)
+{
+    assert(viewport(0, 0) == 0);
+    for (menu_level_id = 0; menu_level_id < 2; ++menu_level_id)
+        for (unsigned count = 1; count <= 20; ++count)
+            for (unsigned row = 0; row <= count; ++row)
+                for (unsigned old_top = 0; old_top < 256; ++old_top) {
+                    disp_window_top_row = old_top;
+                    assert(viewport(count, row));
+                }
+    puts("PASS: reordered selection always stays within the visible menu and label array");
+    return 0;
+}
+"""
+(out/'menu-viewport.c').write_text(viewport_test)
+exe=compile('menu-viewport',[out/'menu-viewport.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')
