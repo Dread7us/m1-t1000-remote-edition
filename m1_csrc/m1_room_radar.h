@@ -110,6 +110,7 @@ bool wifi_room_radar_scan(room_radar_reading_t *reading);
 unsigned wifi_room_radar_networks(room_radar_network_t *networks, unsigned capacity);
 bool wifi_room_radar_join(const char *ssid, const char *password, bool use_saved,
                           bool *credentials_saved);
+void wifi_room_radar_prepare(void);
 bool wifi_room_radar_recover(void);
 void wifi_room_radar(void);
 void room_radar_run(void);

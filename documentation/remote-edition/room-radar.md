@@ -1,6 +1,6 @@
 # Room Radar
 
-Open **WiFi 2.4G → Room Radar**. All observations stay on the M1. The map writes to `System/room-radar.tsv` on the SD card. Motion and LAN results stay in memory.
+Open **WiFi 2.4G → Room Radar**. The main screen offers Wi-Fi map and Room motion. Advanced holds Radio status, LAN devices, and Hotspot clients. Radio status checks both the basic radio link and the optional sensing command, and saves the result to the SD card. All observations stay on the M1. The map writes to `System/room-radar.tsv` on the SD card. Motion and LAN results stay in memory.
 
 | View | What it measures | Requirements |
 | --- | --- | --- |
@@ -23,6 +23,6 @@ Revision 17 clears stale host transfer state when the radio restarts, so an unfi
 
 ## Companion firmware
 
-The existing companion firmware can run the map and hotspot view. LAN and motion need the matching ESP32-C6 SPI build. The source overlay in `tools/room_radar` targets [M1 T-800 V0.4.0](https://github.com/dagnazty/M1-T-800/tree/d07b2f5e6ee1c43ba0f191774667b3ce7f91ddb2) and adds `AT+M1RADAR` without modifying the upstream repository. The [companion workflow](../../.github/workflows/room-radar-companion.yml) builds the `.bin` and matching `.bin.md5` as an Actions artifact. Keep both files together for the M1 ESP32 updater. Install the STM32 firmware and verify the two basic views first. The companion is a separate update.
+The existing companion firmware can run the map and hotspot view. LAN and motion need the matching ESP32-C6 SPI build. The source overlay in `tools/room_radar` targets [M1 T-800 V0.4.0](https://github.com/dagnazty/M1-T-800/tree/d07b2f5e6ee1c43ba0f191774667b3ce7f91ddb2) and adds `AT+M1RADAR` without modifying the upstream repository. The [companion workflow](../../.github/workflows/room-radar-companion.yml) builds the `.bin` and matching `.bin.md5` as an Actions artifact. Keep both files together for the M1 ESP32 updater. Install the STM32 firmware and verify the two basic views first. The companion is a separate update. The experimental image timed out on one M1; restoring the prior radio image recovered its stock Wi-Fi scan. Verify radio startup on hardware before recommending another companion build.
 
 The host tests cover scoring, result parsing, reply matching, and subnet bounds. The CSI classifier and radio behavior need on-device verification.

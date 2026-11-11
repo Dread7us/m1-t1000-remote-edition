@@ -959,7 +959,7 @@ setup=setup.replace('wifi_room_radar_recover','mock_recover').replace('wifi_room
 radar_source=(src/'m1_room_radar.c').read_text()
 for signature in ['static bool radar_radio_ready(const char *title)', 'static bool radar_connected(void)', 'static bool radar_try_network(const room_radar_network_t *network, bool use_saved)', 'static bool radar_connect(void)', 'static void radar_measure(unsigned operation)']:
  piece=function_body(radar_source,signature)
- piece=piece.replace('wifi_room_radar_recover','mock_recover').replace('wifi_room_radar_networks','mock_networks').replace('wifi_room_radar_join','mock_join')
+ piece=piece.replace('wifi_room_radar_prepare','mock_prepare').replace('wifi_room_radar_recover','mock_recover').replace('wifi_room_radar_networks','mock_networks').replace('wifi_room_radar_join','mock_join')
  setup+='\n'+piece
 setup+=r"""
 static void reset(void)
@@ -974,7 +974,8 @@ int main(void)
  reset();keys[0]=BUTTON_OK_KP_ID;key_count=1;assert(radar_connect() && joins==1 && password_prompts==1);
  reset();saved_network=fail_join=true;assert(!radar_connect() && joins==1 && password_prompts==0);
  reset();assert(!radar_connect() && joins==0);
- reset();online=true;radar_measure(2);assert(jobs==1 && key_index==0);
+ reset();simulated_status=ROOM_RADAR_ERROR_REPLY;radar_measure(1);assert(recoveries==0 && scans==0 && jobs==0);
+ reset();simulated_status=ROOM_RADAR_OK_REPLY;online=true;radar_measure(2);assert(jobs==1 && key_index==0);
  reset();online=true;radar_measure(1);assert(jobs==1 && ticks>=5000 && saved_panels==1);
  reset();recovery_ok=true;assert(radar_radio_ready("Test") && recoveries==1);
  puts("PASS: actual Room Radar setup reuses an existing link, reconnects saved Wi-Fi, prompts/saves once, recovers radio and automatically starts LAN/calibration with Back cancellation");

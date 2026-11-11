@@ -875,10 +875,14 @@ bool wifi_room_radar_join(const char *ssid, const char *password, bool use_saved
 }
 #endif
 
+void wifi_room_radar_prepare(void)
+{
+    wifi_ensure_esp32_ready();
+}
+
 void wifi_room_radar(void)
 {
-    if (wifi_ensure_esp32_ready()) room_radar_run();
-    else m1_message_box(&m1_u8g2, "Room Radar", "Wi-Fi unavailable", "Try again", "OK");
+    room_radar_run();
 }
 
 

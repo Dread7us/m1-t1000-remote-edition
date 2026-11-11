@@ -61,12 +61,15 @@ static bool wifi_room_radar_join(const char *ssid,const char *password,bool use_
     assert(!strcmp(ssid,"Home"));assert(use_saved || !strcmp(password,"test-secret"));
     ++joins;*saved=true;online=!fail_join;return online;
 }
+static room_radar_reply_t simulated_status = ROOM_RADAR_OK_REPLY;
 static bool radar_status(room_radar_result_t *result, room_radar_reply_t *status)
 {
-    *result=(room_radar_result_t){ROOM_RADAR_IDLE,0,0}; *status=ROOM_RADAR_OK_REPLY;return true;
+    *result=(room_radar_result_t){ROOM_RADAR_IDLE,0,0}; *status=simulated_status;return simulated_status==ROOM_RADAR_OK_REPLY;
 }
 static bool radar_job(unsigned operation, room_radar_result_t *result, bool *cancelled)
 {
     assert(online && (operation==1 || operation==2));++jobs;
     *cancelled=false;*result=(room_radar_result_t){ROOM_RADAR_DONE,32,10};return true;
 }
+
+static void mock_prepare(void) {}

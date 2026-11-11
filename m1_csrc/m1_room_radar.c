@@ -82,6 +82,7 @@ static void radar_save_status(const char *stage)
 static bool radar_radio_ready(const char *title)
 {
     radar_panel(title, "Checking Wi-Fi", "Please wait...", NULL, NULL);
+    wifi_room_radar_prepare();
     if (radar_at("AT\r\n")) return true;
     radar_panel(title, "Recovering Wi-Fi", "Starting radio...", NULL, NULL);
     if (wifi_room_radar_recover() && radar_at("AT\r\n")) return true;
@@ -355,28 +356,25 @@ static void radar_measure(unsigned operation)
     room_radar_reply_t status;
     bool recovered = false;
     while (!radar_status(&result, &status)) {
-        if (!recovered) {
+        if (status == ROOM_RADAR_ERROR_REPLY) {
+            radar_panel(title, "Needs Radar firmware", "Basic Wi-Fi is ready", "See Advanced", NULL);
+            wait_back();
+            return;
+        }
+        if (!recovered && status == ROOM_RADAR_NO_REPLY) {
             recovered = true;
-            radar_panel(title, "Preparing room sensor", "Checking radio helper", NULL, NULL);
+            radar_panel(title, "Checking radio link", "Please wait...", NULL, NULL);
             wifi_room_radar_recover();
             continue;
         }
         radar_save_status("Room Radar capability query failed");
-        switch (status) {
-        case ROOM_RADAR_NO_REPLY:
-            radar_panel(title, "Wi-Fi did not reply", "Status saved to SD", "Restart M1 and retry", "Retry");
-            break;
-        case ROOM_RADAR_ERROR_REPLY:
-            radar_panel(title, "Room sensor unavailable", "Radio update required", "Status saved to SD", "Retry");
-            break;
-        default:
-            radar_panel(title, "Incomplete radar reply", "ESP32 is responding", "Try again", "Retry");
-            break;
-        }
+        radar_panel(title, status == ROOM_RADAR_NO_REPLY ? "Radio did not reply" : "Incomplete reply",
+                    "See Advanced", NULL, "Retry");
         int key;
         do { key = radar_key(portMAX_DELAY); }
         while (key != BUTTON_OK_KP_ID && key != BUTTON_BACK_KP_ID);
         if (key == BUTTON_BACK_KP_ID) return;
+        recovered = false;
     }
     if (!radar_connect()) return;
     bool calibrated = false;
@@ -431,34 +429,64 @@ static void radar_measure(unsigned operation)
     }
 }
 
-void room_radar_run(void)
+static void radar_diagnostics(void)
 {
-    if (!radar_radio_ready("Room Radar")) return;
-    const char *items[] = {"Wi-Fi map", "LAN devices", "Hotspot clients", "Room motion"};
-    unsigned selected = 0;
+    radar_panel("Radio status", "Checking Wi-Fi", NULL, NULL, NULL);
+    wifi_room_radar_prepare();
+    bool online = radar_at("AT\r\n");
+    room_radar_result_t result;
+    room_radar_reply_t status = ROOM_RADAR_NO_REPLY;
+    bool radar = online && radar_status(&result, &status);
+    const char *detail = radar ? "Room sensing ready" :
+                         status == ROOM_RADAR_ERROR_REPLY ? "Standard radio firmware" :
+                         online ? "Radar reply unavailable" : "Radio did not reply";
+    radar_save_status(detail);
+    radar_panel("Radio status", online ? "Wi-Fi responded" : "Wi-Fi unavailable", detail, NULL, NULL);
+    wait_back();
+}
+
+static unsigned radar_menu(const char *title, const char *const items[3], unsigned selected)
+{
     for (;;) {
-        unsigned first = selected >= 3 ? selected - 2 : 0;
         m1_u8g2_firstpage();
-        m1_draw_header_bar(&m1_u8g2, "Room Radar", "2.4G");
+        m1_draw_header_bar(&m1_u8g2, title, "2.4G");
         u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
-        for (unsigned i = first; i < first + 3; ++i) {
-            int y = 15 + (int)(i - first) * 12;
+        for (unsigned i = 0; i < 3; ++i) {
+            int y = 15 + (int)i * 12;
             m1_ui_selection(&m1_u8g2, 2, y, 124, 11, i == selected);
             m1_draw_text(&m1_u8g2, 8, y + 8, 112, items[i], TEXT_ALIGN_LEFT);
         }
         m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Back", "Open", button_ok_8x8);
         m1_u8g2_nextpage();
         int key = radar_key(portMAX_DELAY);
-        if (key == BUTTON_BACK_KP_ID) return;
-        if (key == BUTTON_UP_KP_ID && selected) --selected;
-        if (key == BUTTON_DOWN_KP_ID && selected < 3) ++selected;
-        if (key == BUTTON_OK_KP_ID) {
-            switch (selected) {
-            case 0: radar_map(); break;
-            case 1: radar_measure(2); break;
-            case 2: radar_hotspot(); break;
-            case 3: radar_measure(1); break;
+        if (key == BUTTON_BACK_KP_ID) return 3;
+        if (key == BUTTON_UP_KP_ID) selected = (selected + 2) % 3;
+        if (key == BUTTON_DOWN_KP_ID) selected = (selected + 1) % 3;
+        if (key == BUTTON_OK_KP_ID) return selected;
+    }
+}
+
+void room_radar_run(void)
+{
+    static const char *const home[] = {"Wi-Fi map", "Room motion", "Advanced"};
+    static const char *const advanced[] = {"Radio status", "LAN devices", "Hotspot clients"};
+    unsigned selected = 0;
+    unsigned advanced_selected = 0;
+    for (;;) {
+        selected = radar_menu("Room Radar", home, selected);
+        if (selected == 3) return;
+        if (selected == 2) {
+            while ((advanced_selected = radar_menu("Advanced", advanced, advanced_selected)) < 3) {
+                if (advanced_selected == 0) radar_diagnostics();
+                else if (radar_radio_ready(advanced[advanced_selected])) {
+                    if (advanced_selected == 1) radar_measure(2);
+                    else radar_hotspot();
+                }
             }
+            advanced_selected = 0;
+        } else if (radar_radio_ready(home[selected])) {
+            if (selected == 0) radar_map();
+            else radar_measure(1);
         }
     }
 }
