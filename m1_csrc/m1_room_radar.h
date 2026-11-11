@@ -80,7 +80,37 @@ static inline bool room_radar_motion(unsigned baseline, unsigned score)
     return score > baseline + 12U + baseline / 2U;
 }
 
+/* ESP-AT quoted arguments escape separators and reject line/control bytes. */
+static inline bool room_radar_quote(const char *input, char *output, unsigned capacity)
+{
+    unsigned used = 0;
+    if (!capacity) return false;
+    output[0] = 0;
+    while (*input) {
+        unsigned char value = (unsigned char)*input++;
+        if (value < 32U || value == 127U) return false;
+        bool escaped = value == '"' || value == '\\' || value == ',';
+        if (used + (escaped ? 2U : 1U) >= capacity) return false;
+        if (escaped) output[used++] = '\\';
+        output[used++] = (char)value;
+    }
+    output[used] = 0;
+    return true;
+}
+
+typedef struct {
+    char ssid[33];
+    int rssi;
+    bool secured;
+    bool saved;
+} room_radar_network_t;
+
+#define ROOM_RADAR_NETWORKS 16U
 bool wifi_room_radar_scan(room_radar_reading_t *reading);
+unsigned wifi_room_radar_networks(room_radar_network_t *networks, unsigned capacity);
+bool wifi_room_radar_join(const char *ssid, const char *password, bool use_saved,
+                          bool *credentials_saved);
+bool wifi_room_radar_recover(void);
 void wifi_room_radar(void);
 void room_radar_run(void);
 

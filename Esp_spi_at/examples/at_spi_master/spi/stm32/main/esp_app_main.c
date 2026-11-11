@@ -1,3 +1,4 @@
+#include "m1_room_radar.h"
 /*
  * SPDX-FileCopyrightText: 2024 Espressif Systems (Shanghai) CO LTD
  *
@@ -1732,13 +1733,19 @@ uint8_t wifi_connect_ap(ctrl_cmd_t *app_req)
 	char *rx_buf = NULL;
 	char *ok_buf = NULL;
 	char *resp_buf = NULL;
-	char at_cmd_buf[128];
+	char at_cmd_buf[224];
+    char quoted_ssid[65], quoted_password[129];
 	int rx_buf_len = 0;
 	uint32_t expected_uid = 0;
 	uint8_t ret;
 	uint32_t tick_t0, tick_pass;
 	uint8_t got_ip = 0;
  
+    if (!room_radar_quote((const char *)app_req->u.wifi_ap_config.ssid, quoted_ssid, sizeof(quoted_ssid)) ||
+        !room_radar_quote((const char *)app_req->u.wifi_ap_config.pwd, quoted_password, sizeof(quoted_password))) {
+        app_req->resp_event_status = FAILURE;
+        return ERROR;
+    }
 	tick_t0 = HAL_GetTick();
 	spi_AT_reset_response_channel();
 
@@ -1789,8 +1796,8 @@ uint8_t wifi_connect_ap(ctrl_cmd_t *app_req)
 
 			snprintf(at_cmd_buf, sizeof(at_cmd_buf), "%s\"%s\",\"%s\"%s",
 					ESP32C6_AT_REQ_CONNECT_AP,
-					(char *)app_req->u.wifi_ap_config.ssid,
-					(char *)app_req->u.wifi_ap_config.pwd,
+					quoted_ssid,
+                    quoted_password,
 					ESP32C6_AT_REQ_CRLF);
 			app_req->at_cmd = strdup(at_cmd_buf);
 			app_req->cmd_len = strlen(app_req->at_cmd);
@@ -1876,6 +1883,8 @@ uint8_t wifi_connect_ap(ctrl_cmd_t *app_req)
 		M1_LOG_E(TAG, "WiFi connect failed (status %ld)\r\n", app_req->resp_event_status);
 	}
 
+    memset(quoted_password, 0, sizeof(quoted_password));
+    memset(at_cmd_buf, 0, sizeof(at_cmd_buf));
 	return ret;
 } // uint8_t wifi_connect_ap(ctrl_cmd_t *app_req)
 

@@ -788,6 +788,93 @@ bool wifi_room_radar_scan(room_radar_reading_t *reading)
     return found;
 }
 
+bool wifi_room_radar_recover(void)
+{
+    m1_esp32_deinit();
+    esp32_main_force_reinit();
+    m1_esp32_init();
+    esp32_main_init();
+    char response[64];
+    return spi_AT_send_recv("AT\r\n", response, sizeof(response), 3) == SUCCESS &&
+           room_radar_reply_status(response) == ROOM_RADAR_OK_REPLY;
+}
+
+#ifdef M1_APP_WIFI_CONNECT_ENABLE
+unsigned wifi_room_radar_networks(room_radar_network_t *networks, unsigned capacity)
+{
+    ctrl_cmd_t request = CTRL_CMD_DEFAULT_REQ();
+    unsigned count = 0;
+    if (!wifi_run_scan(&request, 1)) {
+        wifi_free_scan_results(&request);
+        return 0;
+    }
+    for (int i = 0; i < request.u.wifi_ap_scan.count; ++i) {
+        const wifi_scanlist_t *ap = &request.u.wifi_ap_scan.out_list[i];
+        if (!ap->ssid[0] || ap->channel < 1 || ap->channel > 14) continue;
+        unsigned index;
+        for (index = 0; index < count; ++index)
+            if (!strcmp(networks[index].ssid, (const char *)ap->ssid)) break;
+        if (index == capacity) continue;
+        if (index < count && networks[index].rssi >= ap->rssi) continue;
+        if (index == count) ++count;
+        snprintf(networks[index].ssid, sizeof(networks[index].ssid), "%.32s", ap->ssid);
+        networks[index].rssi = ap->rssi;
+        networks[index].secured = ap->encryption_mode != WIFI_AUTH_OPEN;
+        wifi_credential_t credential;
+        networks[index].saved = wifi_cred_find(networks[index].ssid, &credential);
+        memset(&credential, 0, sizeof(credential));
+    }
+    wifi_free_scan_results(&request);
+    for (unsigned i = 0; i < count; ++i) {
+        for (unsigned j = i + 1; j < count; ++j) {
+            if (networks[j].rssi > networks[i].rssi) {
+                room_radar_network_t swap = networks[i];
+                networks[i] = networks[j];
+                networks[j] = swap;
+            }
+        }
+    }
+    return count;
+}
+
+bool wifi_room_radar_join(const char *ssid, const char *password, bool use_saved,
+                          bool *credentials_saved)
+{
+    wifi_credential_t credential = {0};
+    if (use_saved && !wifi_cred_find(ssid, &credential)) return false;
+    const char *secret = use_saved ? credential.password : password;
+    ctrl_cmd_t request = CTRL_CMD_DEFAULT_REQ();
+    snprintf((char *)request.u.wifi_ap_config.ssid, SSID_LENGTH, "%s", ssid);
+    snprintf((char *)request.u.wifi_ap_config.pwd, PASSWORD_LENGTH, "%s", secret);
+    request.cmd_timeout_sec = DEFAULT_CTRL_RESP_CONNECT_AP_TIMEOUT;
+    request.msg_id = CTRL_RESP_CONNECT_AP;
+    bool connected = wifi_connect_ap(&request) == SUCCESS && request.resp_event_status == SUCCESS;
+    *credentials_saved = use_saved;
+    if (connected) {
+        s_wifi_connected = true;
+        snprintf(s_connected_ssid, sizeof(s_connected_ssid), "%s", ssid);
+        if (!use_saved) *credentials_saved = wifi_cred_save(ssid, secret);
+    }
+    memset(&credential, 0, sizeof(credential));
+    memset(request.u.wifi_ap_config.pwd, 0, PASSWORD_LENGTH);
+    return connected;
+}
+
+#else
+unsigned wifi_room_radar_networks(room_radar_network_t *networks, unsigned capacity)
+{
+    (void)networks; (void)capacity;
+    return 0;
+}
+bool wifi_room_radar_join(const char *ssid, const char *password, bool use_saved,
+                          bool *credentials_saved)
+{
+    (void)ssid; (void)password; (void)use_saved;
+    *credentials_saved = false;
+    return false;
+}
+#endif
+
 void wifi_room_radar(void)
 {
     if (wifi_ensure_esp32_ready()) room_radar_run();

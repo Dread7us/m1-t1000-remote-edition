@@ -47,7 +47,7 @@ A refreshed splash screen featuring the new **monochrome avatar emblem** and **M
 
 ## Room Radar
 
-**Revision 14** adds named Wi-Fi coverage readings and hotspot client counts. A separate ESP32-C6 companion build enables local LAN discovery and experimental Wi-Fi motion sensing. [Room Radar setup and limitations](documentation/remote-edition/room-radar.md).
+**Revision 16** simplifies setup: Room Radar reconnects saved Wi-Fi, offers an in-app network/password picker, starts LAN discovery automatically, and calibrates motion after a five-second placement pause. It also adds named Wi-Fi coverage readings and hotspot client counts. A separate ESP32-C6 companion build enables local LAN discovery and experimental Wi-Fi motion sensing. [Room Radar setup and limitations](documentation/remote-edition/room-radar.md).
 
 ## Infrared output and selection styling
 

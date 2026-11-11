@@ -22,7 +22,7 @@ static int radar_key(TickType_t timeout)
         event.q_evt_type != Q_EVENT_KEYPAD ||
         xQueueReceive(button_events_q_hdl, &keys, 0) != pdTRUE) return -1;
     const int ids[] = {BUTTON_BACK_KP_ID, BUTTON_OK_KP_ID, BUTTON_UP_KP_ID,
-                       BUTTON_DOWN_KP_ID, BUTTON_LEFT_KP_ID};
+                       BUTTON_DOWN_KP_ID, BUTTON_LEFT_KP_ID, BUTTON_RIGHT_KP_ID};
     for (unsigned i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i)
         if (keys.event[ids[i]] == BUTTON_EVENT_CLICK) return ids[i];
     return -1;
@@ -64,6 +64,98 @@ static bool radar_status(room_radar_result_t *result, room_radar_reply_t *status
 {
     *status = radar_exchange("AT+M1RADAR?\r\n");
     return *status != ROOM_RADAR_NO_REPLY && room_radar_status_data(reply, result);
+}
+
+static void radar_save_status(const char *stage)
+{
+    FIL file;
+    UINT written;
+    f_mkdir("0:/System");
+    if (f_open(&file, "0:/System/room-radar-status.txt", FA_WRITE | FA_CREATE_ALWAYS) != FR_OK)
+        return;
+    f_write(&file, stage, (UINT)strlen(stage), &written);
+    f_write(&file, "\r\n", 2, &written);
+    f_write(&file, reply, (UINT)strlen(reply), &written);
+    f_close(&file);
+}
+
+static bool radar_radio_ready(const char *title)
+{
+    radar_panel(title, "Checking Wi-Fi", "Please wait...", NULL, NULL);
+    if (radar_at("AT\r\n")) return true;
+    radar_panel(title, "Recovering Wi-Fi", "Starting radio...", NULL, NULL);
+    if (wifi_room_radar_recover() && radar_at("AT\r\n")) return true;
+    radar_save_status("Radio readiness failed");
+    radar_panel(title, "Wi-Fi did not start", "Reconnect USB or reboot", "Then try again", NULL);
+    wait_back();
+    return false;
+}
+
+static bool radar_connected(void)
+{
+    if (!radar_at("AT+CWJAP?\r\n") || !strstr(reply, "+CWJAP:")) return false;
+    if (!radar_at("AT+CIPSTA?\r\n")) return false;
+    const char *ip = strstr(reply, "+CIPSTA:ip:\"");
+    return ip && strncmp(ip + 12, "0.0.0.0\"", 8) != 0;
+}
+
+static bool radar_try_network(const room_radar_network_t *network, bool use_saved)
+{
+    char password[65] = {0};
+    if (!use_saved && network->secured &&
+        !m1_vkb_get_password("Wi-Fi password", password, sizeof(password))) return false;
+    radar_panel("Wi-Fi setup", "Joining network", network->ssid, "Please wait...", NULL);
+    bool saved = false;
+    bool connected = wifi_room_radar_join(network->ssid, password, use_saved, &saved);
+    memset(password, 0, sizeof(password));
+    if (connected && !saved) {
+        radar_panel("Wi-Fi setup", "Connected for this use", "Could not save password", "Check SD card later", "Continue");
+        int key;
+        do { key = radar_key(portMAX_DELAY); }
+        while (key != BUTTON_OK_KP_ID && key != BUTTON_BACK_KP_ID);
+        if (key == BUTTON_BACK_KP_ID) return false;
+    }
+    return connected && radar_connected();
+}
+
+static bool radar_connect(void)
+{
+    if (radar_connected()) return true;
+    room_radar_network_t networks[ROOM_RADAR_NETWORKS];
+    radar_panel("Wi-Fi setup", "Finding networks", "Using saved passwords", NULL, NULL);
+    unsigned count = wifi_room_radar_networks(networks, ROOM_RADAR_NETWORKS);
+    /* Reconnect a visible saved network, strongest first. */
+    for (unsigned i = 0; i < count; ++i) {
+        if (radar_key(0) == BUTTON_BACK_KP_ID) return false;
+        if (networks[i].saved) {
+            if (radar_try_network(&networks[i], true)) return true;
+            break;
+        }
+    }
+    unsigned selected = 0;
+    for (;;) {
+        if (!count) {
+            radar_panel("Wi-Fi setup", "No 2.4 GHz networks", "Move closer to router", NULL, "Rescan");
+        } else {
+            char detail[32];
+            snprintf(detail, sizeof(detail), "%d dBm  %u/%u", networks[selected].rssi, selected + 1U, count);
+            radar_panel("Choose Wi-Fi", networks[selected].ssid, detail, "Up/Down choose network", "Join");
+        }
+        int key = radar_key(portMAX_DELAY);
+        if (key == BUTTON_BACK_KP_ID) return false;
+        if (key == BUTTON_UP_KP_ID && selected) --selected;
+        if (key == BUTTON_DOWN_KP_ID && selected + 1U < count) ++selected;
+        if (key != BUTTON_OK_KP_ID) continue;
+        if (!count) {
+            count = wifi_room_radar_networks(networks, ROOM_RADAR_NETWORKS);
+            continue;
+        }
+        if (radar_try_network(&networks[selected], false)) return true;
+        radar_panel("Wi-Fi setup", "Could not join", "Check password or range", NULL, "Try again");
+        do { key = radar_key(portMAX_DELAY); }
+        while (key != BUTTON_OK_KP_ID && key != BUTTON_BACK_KP_ID);
+        if (key == BUTTON_BACK_KP_ID) return false;
+    }
 }
 
 static void clean_label(char *label)
@@ -127,43 +219,85 @@ static void show_reading(const room_radar_reading_t *row, const char *footer)
 
 static void radar_map(void)
 {
+    room_radar_reading_t row = {0};
     unsigned count = map_load();
     unsigned index = count ? count - 1U : 0U;
+    bool live = true;
+    bool refresh = true;
     for (;;) {
-        if (count) show_reading(&readings[index], "Add");
-        else radar_panel("Wi-Fi map", "No saved readings", "Choose a spot", "OK adds a reading", "Add");
+        if (refresh) {
+            snprintf(row.room, sizeof(row.room), "Spot %u", count + 1U);
+            radar_panel("Wi-Fi map", "Reading this spot", "Scanning 2.4 GHz", NULL, NULL);
+            if (!wifi_room_radar_scan(&row)) {
+                radar_panel("Wi-Fi map", "No valid reading", "Move closer to Wi-Fi", NULL, "Retry");
+                int key = radar_key(portMAX_DELAY);
+                if (key == BUTTON_BACK_KP_ID) return;
+                continue;
+            }
+            refresh = false;
+        }
+        if (live) show_reading(&row, "Save");
+        else show_reading(&readings[index], "New");
         int key = radar_key(portMAX_DELAY);
         if (key == BUTTON_BACK_KP_ID) return;
-        if (key == BUTTON_UP_KP_ID && index) --index;
-        if (key == BUTTON_DOWN_KP_ID && index + 1U < count) ++index;
-        if (key != BUTTON_OK_KP_ID) continue;
-
-        char name[64] = {0};
-        if (!m1_vkb_get_filename("Location name", "Room", name) || !name[0]) continue;
-        room_radar_reading_t row = {0};
-        snprintf(row.room, sizeof(row.room), "%.24s", name);
-        radar_panel("Wi-Fi map", row.room, "Scanning 2.4 GHz", "Hold the M1 here", NULL);
-        if (!wifi_room_radar_scan(&row)) {
-            radar_panel("Wi-Fi map", "No valid reading", "Try another spot", NULL, NULL);
-            wait_back();
-            continue;
+        if (key == BUTTON_LEFT_KP_ID) {live = true; refresh = true;}
+        if (key == BUTTON_RIGHT_KP_ID && live) {
+            char name[64] = {0};
+            if (m1_vkb_get_filename("Name this spot", row.room, name) && name[0])
+                snprintf(row.room, sizeof(row.room), "%.24s", name);
         }
+        if (key == BUTTON_UP_KP_ID && count) {
+            if (live) index = count - 1U;
+            else if (index) --index;
+            live = false;
+        }
+        if (key == BUTTON_DOWN_KP_ID && !live && index + 1U < count) ++index;
+        if (key != BUTTON_OK_KP_ID) continue;
+        if (!live) {live = true; refresh = true; continue;}
         if (!map_save(&row)) {
             radar_panel("Wi-Fi map", "Reading not saved", "Check mounted SD", NULL, NULL);
             wait_back();
-            continue;
+        } else {
+            count = map_load();
+            index = count ? count - 1U : 0U;
+            live = false;
         }
-        count = map_load();
-        index = count ? count - 1U : 0U;
     }
+}
+
+static bool radar_start_hotspot(char previous_mode)
+{
+    char password[65] = {0}, quoted[129], command[200];
+    if (!m1_vkb_get_password("Hotspot password", password, sizeof(password))) return false;
+    size_t length = strlen(password);
+    if (length < 8 || length > 63 || !room_radar_quote(password, quoted, sizeof(quoted))) {
+        memset(password, 0, sizeof(password));
+        radar_panel("M1 hotspot", "Use 8 to 63 characters", "Choose a password", NULL, NULL);
+        wait_back();
+        return false;
+    }
+    snprintf(command, sizeof(command), "AT+CWSAP=\"M1-Radar\",\"%s\",6,3\r\n", quoted);
+    memset(password, 0, sizeof(password));
+    memset(quoted, 0, sizeof(quoted));
+    bool ok = radar_at("AT+CWMODE=3\r\n") && radar_at(command);
+    if (!ok) {
+        char restore[24];
+        snprintf(restore, sizeof(restore), "AT+CWMODE=%c\r\n", previous_mode);
+        radar_at(restore);
+    }
+    memset(command, 0, sizeof(command));
+    memset(reply, 0, sizeof(reply));
+    return ok;
 }
 
 static void radar_hotspot(void)
 {
     for (;;) {
         const char *mode = radar_at("AT+CWMODE?\r\n") ? strstr(reply, "+CWMODE:") : NULL;
-        if (!mode || (mode[8] != '2' && mode[8] != '3')) {
-            radar_panel("Hotspot clients", "M1 hotspot inactive", "Set AP mode in Wi-Fi", NULL, "Retry");
+        char previous_mode = mode && mode[8] >= '0' && mode[8] <= '3' ? mode[8] : '1';
+        bool active = previous_mode == '2' || previous_mode == '3';
+        if (!active) {
+            radar_panel("Hotspot clients", "Start an M1 hotspot", "Join it from your phone", "Name: M1-Radar", "Start");
         } else if (radar_at("AT+CWLIF\r\n")) {
             unsigned count = 0;
             for (const char *p = reply; (p = strstr(p, "+CWLIF:")); p += 7) ++count;
@@ -176,6 +310,10 @@ static void radar_hotspot(void)
         int key;
         do { key = radar_key(portMAX_DELAY); } while (key != BUTTON_OK_KP_ID && key != BUTTON_BACK_KP_ID);
         if (key == BUTTON_BACK_KP_ID) return;
+        if (!active && !radar_start_hotspot(previous_mode)) {
+            radar_panel("M1 hotspot", "Hotspot did not start", "Try another password", NULL, NULL);
+            wait_back();
+        }
     }
 }
 
@@ -215,13 +353,21 @@ static void radar_measure(unsigned operation)
     const char *title = operation == 1U ? "Room motion" : "LAN devices";
     room_radar_result_t result;
     room_radar_reply_t status;
+    bool recovered = false;
     while (!radar_status(&result, &status)) {
+        if (!recovered) {
+            recovered = true;
+            radar_panel(title, "Preparing room sensor", "Checking radio helper", NULL, NULL);
+            wifi_room_radar_recover();
+            continue;
+        }
+        radar_save_status("Room Radar capability query failed");
         switch (status) {
         case ROOM_RADAR_NO_REPLY:
-            radar_panel(title, "No ESP32 reply", "Reset ESP32-C6", "or test Wi-Fi Scan", "Retry");
+            radar_panel(title, "Wi-Fi did not reply", "Status saved to SD", "Restart M1 and retry", "Retry");
             break;
         case ROOM_RADAR_ERROR_REPLY:
-            radar_panel(title, "Radar command rejected", "Check companion image", "or reset ESP32-C6", "Retry");
+            radar_panel(title, "Room sensor unavailable", "Radio update required", "Status saved to SD", "Retry");
             break;
         default:
             radar_panel(title, "Incomplete radar reply", "ESP32 is responding", "Try again", "Retry");
@@ -232,14 +378,26 @@ static void radar_measure(unsigned operation)
         while (key != BUTTON_OK_KP_ID && key != BUTTON_BACK_KP_ID);
         if (key == BUTTON_BACK_KP_ID) return;
     }
+    if (!radar_connect()) return;
     bool calibrated = false;
     unsigned baseline = 0;
     char summary[32] = {0};
-    radar_panel(title, operation == 1U ? "Calibrate empty room" : "Your connected network",
-                operation == 1U ? "Set M1 down first" : "Counts ping replies",
-                operation == 1U ? "Press OK, stay still" : "Use on your own LAN", "Start");
+    bool first_run = true;
+    radar_panel(title, operation == 1U ? "Set M1 down" : "Checking your network",
+                operation == 1U ? "Keep room quiet" : "Finding nearby peers",
+                operation == 1U ? "Calibration starts in 5s" : NULL, NULL);
     for (;;) {
-        int key = radar_key(portMAX_DELAY);
+        int key;
+        if (first_run) {
+            first_run = false;
+            key = BUTTON_OK_KP_ID;
+            if (operation == 1U) {
+                TickType_t until = xTaskGetTickCount();
+                while (xTaskGetTickCount() - until < pdMS_TO_TICKS(5000)) {
+                    if (radar_key(pdMS_TO_TICKS(100)) == BUTTON_BACK_KP_ID) return;
+                }
+            }
+        } else key = radar_key(portMAX_DELAY);
         if (key == BUTTON_BACK_KP_ID) return;
         if (key == BUTTON_LEFT_KP_ID && operation == 1U) {
             calibrated = false;
@@ -250,7 +408,8 @@ static void radar_measure(unsigned operation)
         bool cancelled;
         if (!radar_job(operation, &result, &cancelled)) {
             if (cancelled) return;
-            radar_panel(title, "Measurement failed", "Check Wi-Fi connection", NULL, "Retry");
+            if (!radar_connected() && !radar_connect()) return;
+            radar_panel(title, "Could not measure", "Wi-Fi checked", "Try again", "Retry");
             continue;
         }
         if (operation == 2U) {
@@ -274,6 +433,7 @@ static void radar_measure(unsigned operation)
 
 void room_radar_run(void)
 {
+    if (!radar_radio_ready("Room Radar")) return;
     const char *items[] = {"Wi-Fi map", "LAN devices", "Hotspot clients", "Room motion"};
     unsigned selected = 0;
     for (;;) {

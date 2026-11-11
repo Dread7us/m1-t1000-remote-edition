@@ -343,7 +343,22 @@ static void vkb_redraw_page(uint8_t page, uint8_t row_id, uint8_t col_id,
  *
  */
 /*============================================================================*/
-uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_name)
+static void vkb_draw_input(const char *text, bool masked)
+{
+    char visible[M1_VIRTUAL_KB_FILENAME_MAX + 1];
+    size_t length = strlen(text);
+    const char *tail = text + (length > M1_VIRTUAL_KB_FILENAME_MAX ? length - M1_VIRTUAL_KB_FILENAME_MAX : 0);
+    snprintf(visible, sizeof(visible), "%s", tail);
+    if (masked) memset(visible, '*', strlen(visible));
+    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
+    u8g2_DrawBox(&m1_u8g2, M1_VKB_FILENAME_POS_X, M1_VKB_FILENAME_FRAME_POS_Y + 1,
+                 M1_VKB_FILENAME_FRAME_WIDTH - 4, M1_VKB_FILENAME_FRAME_HEIGHT - 2);
+    u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+    u8g2_DrawStr(&m1_u8g2, M1_VKB_FILENAME_POS_X, M1_VKB_FILENAME_POS_Y, visible);
+}
+
+static uint8_t vkb_text_input(char *description, char *default_name, char *new_name,
+                              unsigned limit, bool masked)
 {
 	S_M1_Buttons_Status this_button_status;
 	S_M1_Main_Q_t q_item;
@@ -353,7 +368,7 @@ uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_nam
 	uint8_t len;
 	uint8_t vkb_page = M1_VKB_PAGE_LOWER;
 	S_M1_VKB_Func_Key_ID x_key_id;
-	char key[2], filename[M1_VIRTUAL_KB_FILENAME_MAX + 1];
+	char key[2], filename[65];
 
 	memset(filename, 0, sizeof(filename));
 	key[1] = 0x00;
@@ -376,13 +391,13 @@ uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_nam
 		len = strlen(default_name);
 		if ( len )
 		{
-			strncpy(filename, default_name, M1_VIRTUAL_KB_FILENAME_MAX);
-			if ( len >= M1_VIRTUAL_KB_FILENAME_MAX )
+			strncpy(filename, default_name, limit);
+			if ( len >= limit )
 			{
-				filename[M1_VIRTUAL_KB_FILENAME_MAX] = 0x00;
-				len = M1_VIRTUAL_KB_FILENAME_MAX;
+				filename[limit] = 0x00;
+				len = limit;
 			}
-			u8g2_DrawStr(&m1_u8g2, M1_VKB_FILENAME_POS_X, M1_VKB_FILENAME_POS_Y, filename);
+			vkb_draw_input(filename, masked);
 		} // if ( len )
 
 		y = M1_VKB_FIRST_ROW_TOP_POS_Y + M1_VKB_GUI_FONT_HEIGHT;
@@ -447,32 +462,22 @@ uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_nam
 							{
 								len--;
 								filename[len] = 0x00; // Add NULL to the end of the string
-								x = M1_VKB_FILENAME_POS_X;
-								x += M1_VKB_GUI_FONT_WIDTH*len;
-								y = M1_VKB_FILENAME_POS_Y;
-								// Clear this character
-								u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_BG);
-								u8g2_DrawBox(&m1_u8g2, x, y - M1_VKB_GUI_FONT_HEIGHT + 2, M1_VKB_GUI_FONT_WIDTH, M1_VKB_GUI_FONT_HEIGHT);
-								u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
+                                vkb_draw_input(filename, masked);
 								m1_u8g2_nextpage(); // Update graphic to the display RAM
 							} // if (len)
 						}
 					} // if ( x_key_id != M1_VKB_FUNC_UNDEFINED_KEY_ID )
 					else // Normal key is hit
 					{
-						if ( len < M1_VIRTUAL_KB_FILENAME_MAX )
+						if ( len < limit )
 						{
 							key[0] = m1_vkb_pages[vkb_page][row_id][col_id];
 							filename[len] = key[0];
 							len++;
 							filename[len] = 0x00; // Add NULL to the end of the string
-							x = M1_VKB_FILENAME_POS_X;
-							x += M1_VKB_GUI_FONT_WIDTH*(len-1);
-							y = M1_VKB_FILENAME_POS_Y;
-							u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
-							u8g2_DrawStr(&m1_u8g2, x, y, key); // Display this character
+                            vkb_draw_input(filename, masked);
 							m1_u8g2_nextpage(); // Update graphic to the display RAM
-						} // if ( len < M1_VIRTUAL_KB_FILENAME_MAX )
+						} // if ( len < limit )
 					} // else
 				}
 				else if ( this_button_status.event[BUTTON_BACK_KP_ID]==BUTTON_EVENT_CLICK ) // User wants to exit?
@@ -732,8 +737,24 @@ uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_nam
 		} // if (ret==pdTRUE)
 	} // while (1 ) // Main loop of this task
 
+    memset(filename, 0, sizeof(filename));
 	return len;
-}// uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_name)
+}
+
+uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_name)
+{
+    return vkb_text_input(description, default_name, new_name, M1_VIRTUAL_KB_FILENAME_MAX, false);
+}
+
+uint8_t m1_vkb_get_password(char *description, char *output, unsigned capacity)
+{
+    if (!output || capacity < 2) return 0;
+    unsigned limit = capacity - 1;
+    if (limit > 64) limit = 64;
+    output[0] = 0;
+    return vkb_text_input(description, "", output, limit, true);
+}
+// uint8_t m1_vkb_get_filename(char *description, char *default_name, char *new_name)
 
 
 

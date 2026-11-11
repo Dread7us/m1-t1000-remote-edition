@@ -951,5 +951,37 @@ assert 'HAL_NVIC_ClearPendingIRQ' in rxstop and '__HAL_RCC_TIM2_FORCE_RESET' in 
 
 exe=compile('room-radar',[repo/'tools/room_radar/test_room_radar.c']);print(run([exe]))
 
+
+setup=(repo/'tools/room_radar/setup_prelude.h').read_text()
+# The real functions use the public declarations in the header. Rename the
+# hardware adapters in this harness to avoid a static/non-static mismatch.
+setup=setup.replace('wifi_room_radar_recover','mock_recover').replace('wifi_room_radar_networks','mock_networks').replace('wifi_room_radar_join','mock_join')
+radar_source=(src/'m1_room_radar.c').read_text()
+for signature in ['static bool radar_radio_ready(const char *title)', 'static bool radar_connected(void)', 'static bool radar_try_network(const room_radar_network_t *network, bool use_saved)', 'static bool radar_connect(void)', 'static void radar_measure(unsigned operation)']:
+ piece=function_body(radar_source,signature)
+ piece=piece.replace('wifi_room_radar_recover','mock_recover').replace('wifi_room_radar_networks','mock_networks').replace('wifi_room_radar_join','mock_join')
+ setup+='\n'+piece
+setup+=r"""
+static void reset(void)
+{
+ online=radio_online=recovery_ok=saved_network=fail_join=false;
+ scans=joins=password_prompts=recoveries=jobs=saved_panels=key_count=key_index=ticks=0;
+}
+int main(void)
+{
+ reset();online=true;assert(radar_connect() && scans==0 && joins==0);
+ reset();saved_network=true;assert(radar_connect() && scans==1 && joins==1 && password_prompts==0);
+ reset();keys[0]=BUTTON_OK_KP_ID;key_count=1;assert(radar_connect() && joins==1 && password_prompts==1);
+ reset();saved_network=fail_join=true;assert(!radar_connect() && joins==1 && password_prompts==0);
+ reset();assert(!radar_connect() && joins==0);
+ reset();online=true;radar_measure(2);assert(jobs==1 && key_index==0);
+ reset();online=true;radar_measure(1);assert(jobs==1 && ticks>=5000 && saved_panels==1);
+ reset();recovery_ok=true;assert(radar_radio_ready("Test") && recoveries==1);
+ puts("PASS: actual Room Radar setup reuses an existing link, reconnects saved Wi-Fi, prompts/saves once, recovers radio and automatically starts LAN/calibration with Back cancellation");
+ return 0;
+}
+"""
+(out/'room-radar-setup.c').write_text(setup);exe=compile('room-radar-setup',[out/'room-radar-setup.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

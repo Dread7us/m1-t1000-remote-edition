@@ -25,6 +25,14 @@ int main(void)
     assert(room_radar_reply_status("BOOK\r\n") == ROOM_RADAR_DATA_REPLY);
     assert(room_radar_reply_status("OK\r\nWIFI GOT IP\r\n") == ROOM_RADAR_OK_REPLY);
 
+    char quoted[129];
+    assert(room_radar_quote("a,b\\c\"", quoted, sizeof(quoted)));
+    assert(!strcmp(quoted, "a\\,b\\\\c\\\""));
+    assert(!room_radar_quote("bad\rpassword", quoted, sizeof(quoted)));
+    char password[65]; memset(password, '\\', 64); password[64]=0;
+    assert(room_radar_quote(password, quoted, sizeof(quoted)) && strlen(quoted)==128);
+    assert(!room_radar_quote(password, quoted, 128));
+
     uint32_t first, last;
     assert(radar_subnet(0xc0a80105U, 0xffffff00U, &first, &last));
     assert(first == 0xc0a80101U && last == 0xc0a801feU);

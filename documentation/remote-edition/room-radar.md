@@ -9,13 +9,15 @@ Open **WiFi 2.4G → Room Radar**. All observations stay on the M1. The map writ
 | LAN devices | Distinct IPv4 addresses that answer a ping on the M1's directly connected private subnet. Some devices block replies. | Room Radar ESP32 companion, joined Wi-Fi, private /24 or smaller subnet |
 | Room motion | Change in the shape of Wi-Fi channel measurements, compared with an empty-room baseline. | Room Radar ESP32 companion, joined Wi-Fi and a stationary M1 |
 
-For a room test, set the M1 down, open **Room motion**, and press OK with the room still. Once the baseline is recorded, press OK to measure again. Test an empty room and a person crossing the room with their phone's Wi-Fi off. Repeat while the person sits still. Left discards the baseline so you can recalibrate after moving the M1 or changing Wi-Fi networks. **Quiet window** means the signal was below the motion threshold during that measurement. Motion may also come from fans, pets, or movement outside the intended area. There is no head-count estimate.
+Revision 16 reuses the current connection or tries the strongest visible saved network. If needed, select a network and enter its password directly in Room Radar; successful credentials are saved. Full Wi-Fi passwords are supported. LAN discovery starts automatically. Hotspot clients can create the M1 hotspot in place. Wi-Fi map reads immediately; Right names the spot and OK saves it.
+
+For a room test, open **Room motion**, set the M1 down, and keep the room still during the five-second countdown and automatic baseline. Once the baseline is recorded, press OK to measure again. Test an empty room and a person crossing the room with their phone's Wi-Fi off. Repeat while the person sits still. Left discards the baseline so you can recalibrate after moving the M1 or changing Wi-Fi networks. **Quiet window** means the signal was below the motion threshold during that measurement. Motion may also come from fans, pets, or movement outside the intended area. There is no head-count estimate.
 
 The LAN view discovers the station subnet automatically. It uses a single bound ICMP socket, tests at most 253 other addresses, and discards unrelated replies. There is no router login or model-specific dependency. Start it only on a network you manage. The motion view filters CSI frames from the associated access point, pings the IPv4 gateway for a bounded measurement, and returns a score and sample count. Back requests cancellation. The coprocessor also ends the job on its own timeout.
 
 ## ESP32 status messages
 
-Revision 15 accepts a complete status line even when the separate acknowledgement is absent. It distinguishes a transport timeout, a rejected command, and an incomplete reply. A timeout or incomplete reply does not identify the installed ESP32 image. Try the ESP32-C6 reset in System and check Wi-Fi Scan before replacing the companion.
+Revision 15 accepts a complete status line even when the separate acknowledgement is absent. It distinguishes a transport timeout, a rejected command, and an incomplete reply. A timeout or incomplete reply does not identify the installed ESP32 image. Revision 16 attempts radio recovery once and records failed readiness/capability replies in `System/room-radar-status.txt` on a mounted SD card. The file contains diagnostic status, not Wi-Fi passwords.
 
 ## Companion firmware
 
