@@ -18,6 +18,7 @@
 #include "m1_compile_cfg.h"
 #include "m1_display.h"
 #include "m1_menu.h"
+#include "m1_room_radar.h"
 #include "m1_settings.h"
 #include "m1_system.h"
 
@@ -133,9 +134,9 @@ static S_M1_Menu_t menu_Power =
 
 #define MAIN_MENU_COUNT  (10 + OPT_BADUSB + OPT_GAMES + OPT_APPS + OPT_ESPLINK)
 
-S_M1_Menu_t menu_Main =
+static S_M1_Menu_t menu_Tools =
 {
-    "Main Menu", NULL, NULL, NULL, MAIN_MENU_COUNT, 0, NULL, NULL,
+    "Tools", NULL, NULL, NULL, MAIN_MENU_COUNT, 0, NULL, NULL,
     {&menu_Sub_GHz, &menu_125KHz_RFID, &menu_NFC, &menu_Infrared, &menu_GPIO,
      &menu_Wifi, &menu_Bluetooth,
      ENT_ESPLINK
@@ -143,6 +144,38 @@ S_M1_Menu_t menu_Main =
      ENT_GAMES
      ENT_APPS
      &menu_Storage, &menu_Power, &menu_System}
+};
+
+static S_M1_Menu_t menu_Signal_Map = {.title = "Wi-Fi Signal Map", .sub_func = room_radar_open_map};
+static S_M1_Menu_t menu_Room_Motion = {.title = "Room Motion", .sub_func = room_radar_open_motion};
+static S_M1_Menu_t menu_LAN_Devices = {.title = "LAN Devices", .sub_func = room_radar_open_lan};
+
+static void roomscope_home_draw(const S_M1_Menu_t *menu, uint8_t selected)
+{
+    static const uint8_t icons[][8] = {
+        {0x00, 0x3c, 0x42, 0x18, 0x24, 0x00, 0x18, 0x00},
+        {0x18, 0x24, 0x42, 0x99, 0x99, 0x42, 0x24, 0x18},
+        {0x18, 0x18, 0x18, 0x7e, 0x42, 0x42, 0x66, 0x66},
+        {0x00, 0x7e, 0x42, 0x5a, 0x42, 0x7e, 0x00, 0x00}
+    };
+    m1_u8g2_firstpage();
+    m1_draw_header_bar(&m1_u8g2, "RoomScope", NULL);
+    u8g2_SetFont(&m1_u8g2, M1_DISP_FUNC_MENU_FONT_N);
+    for (uint8_t row = 0; row < menu->num_submenu_items; ++row) {
+        int y = 11 + 10 * row;
+        m1_ui_selection(&m1_u8g2, 1, y, 126, 10, selected == row);
+        u8g2_DrawXBMP(&m1_u8g2, 6, y + 1, 8, 8, icons[row]);
+        m1_draw_text(&m1_u8g2, 20, y + 8, 102, menu->submenu[row]->title, TEXT_ALIGN_LEFT);
+    }
+    m1_draw_bottom_bar(&m1_u8g2, button_back_8x8, "Splash", "Open", button_ok_8x8);
+    m1_u8g2_nextpage();
+}
+
+S_M1_Menu_t menu_Main = {
+    .title = "Room Radar",
+    .num_submenu_items = 4,
+    .gui_menu_update = roomscope_home_draw,
+    .submenu = {&menu_Signal_Map, &menu_Room_Motion, &menu_LAN_Devices, &menu_Tools}
 };
 
 /*************** F U N C T I O N   I M P L E M E N T A T I O N ****************/

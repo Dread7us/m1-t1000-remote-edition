@@ -429,6 +429,21 @@ static void radar_measure(unsigned operation)
     }
 }
 
+void room_radar_open_map(void)
+{
+    if (radar_radio_ready("Wi-Fi Signal Map")) radar_map();
+}
+
+void room_radar_open_motion(void)
+{
+    if (radar_radio_ready("Room Motion")) radar_measure(1);
+}
+
+void room_radar_open_lan(void)
+{
+    if (radar_radio_ready("LAN Devices")) radar_measure(2);
+}
+
 static void radar_diagnostics(void)
 {
     radar_panel("Radio Status", "Checking Wi-Fi", NULL, NULL, NULL);

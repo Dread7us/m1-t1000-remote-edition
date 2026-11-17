@@ -213,6 +213,7 @@ void m1_gui_menu_update(const S_M1_Menu_t *phmenu, uint8_t sel_item, uint8_t dir
 
 	if ( phmenu->gui_menu_update ) // This menu item has its own gui update function?
 	{
+		if (direction == MENU_UPDATE_RESTORE && menu_level) --menu_level;
 		phmenu->gui_menu_update(phmenu, sel_item);
 		if ( direction==MENU_UPDATE_RESET ) // Sub-menu changes to deeper level?
 		{

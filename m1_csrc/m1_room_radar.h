@@ -114,5 +114,8 @@ void wifi_room_radar_prepare(void);
 bool wifi_room_radar_recover(void);
 void wifi_room_radar(void);
 void room_radar_run(void);
+void room_radar_open_map(void);
+void room_radar_open_motion(void);
+void room_radar_open_lan(void);
 
 #endif
