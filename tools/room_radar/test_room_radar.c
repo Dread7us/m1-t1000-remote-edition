@@ -13,6 +13,10 @@ int main(void)
     assert(!room_radar_parse_result("+M1RADAR:1,2,255,40\r\n", &result));
     assert(!room_radar_parse_result("+M1RADAR:1,2,32,40x\r\n", &result));
     assert(!room_radar_parse_result("ERROR\r\n", &result));
+    assert(room_radar_classify(52, 60, 55, 53) == ROOM_RADAR_QUIET);
+    assert(room_radar_classify(52, 60, 55, 30) == ROOM_RADAR_INCONCLUSIVE);
+    assert(room_radar_classify(52, 60, 55, 100) == ROOM_RADAR_MOTION);
+    assert(room_radar_classify(20, 80, 50, 100) == ROOM_RADAR_INCONCLUSIVE);
     assert(!room_radar_motion(10, 27) && room_radar_motion(10, 28));
 
     assert(room_radar_status_data("+M1RADAR:1,0,0,0\r\n", &result));

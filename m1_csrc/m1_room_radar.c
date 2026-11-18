@@ -326,8 +326,8 @@ static bool radar_job(unsigned operation, room_radar_result_t *result, bool *can
     *cancelled = false;
     if (!radar_at(command)) return false;
     TickType_t start = xTaskGetTickCount();
-    radar_panel(title, operation == 1U ? "Sampling Wi-Fi CSI" : "Checking local peers",
-                operation == 1U ? "Keep the M1 still" : "Private subnet only", NULL, NULL);
+    if (operation == 2U)
+        radar_panel(title, "Checking local peers", "Private subnet only", NULL, NULL);
     TickType_t last_poll = start;
     while (xTaskGetTickCount() - start < pdMS_TO_TICKS(operation == 1U ? 8500 : 38000)) {
         if (radar_key(pdMS_TO_TICKS(100)) == BUTTON_BACK_KP_ID) {
@@ -378,53 +378,93 @@ static void radar_measure(unsigned operation)
     }
     if (!radar_connect()) return;
     bool calibrated = false;
-    unsigned baseline = 0;
-    char summary[32] = {0};
+    unsigned baseline = 0, quiet_low = 0, quiet_high = 0;
+    unsigned measurement_windows = 1;
+    char summary[32];
     bool first_run = true;
-    radar_panel(title, operation == 1U ? "Set M1 down" : "Checking your network",
-                operation == 1U ? "Keep room quiet" : "Finding nearby peers",
-                operation == 1U ? "Calibration starts in 5s" : NULL, NULL);
     for (;;) {
-        int key;
-        if (first_run) {
-            first_run = false;
-            key = BUTTON_OK_KP_ID;
-            if (operation == 1U) {
-                TickType_t until = xTaskGetTickCount();
-                while (xTaskGetTickCount() - until < pdMS_TO_TICKS(5000)) {
-                    if (radar_key(pdMS_TO_TICKS(100)) == BUTTON_BACK_KP_ID) return;
-                }
+        if (first_run && operation == 1U) {
+            radar_panel(title, "Set M1 down", "Keep the room quiet", "Starts in 5 seconds", NULL);
+            TickType_t start = xTaskGetTickCount();
+            while (xTaskGetTickCount() - start < pdMS_TO_TICKS(5000)) {
+                if (radar_key(pdMS_TO_TICKS(100)) == BUTTON_BACK_KP_ID) return;
             }
-        } else key = radar_key(portMAX_DELAY);
+        }
+        int key = first_run ? BUTTON_OK_KP_ID : radar_key(portMAX_DELAY);
+        first_run = false;
         if (key == BUTTON_BACK_KP_ID) return;
-        if (key == BUTTON_LEFT_KP_ID && operation == 1U) {
+        if (operation == 1U && key == BUTTON_LEFT_KP_ID) {
             calibrated = false;
-            radar_panel(title, "Calibrate empty room", "Hold position still", NULL, "Start");
+            first_run = true;
+            continue;
+        }
+        if (operation == 1U && calibrated && key == BUTTON_RIGHT_KP_ID) {
+            measurement_windows = measurement_windows == 1 ? 3 : 1;
+            radar_panel(title, measurement_windows == 1 ? "Quick: 1 window" : "Extended: 3 windows",
+                        "Keep the M1 still", "Left: Calibrate", "Measure");
             continue;
         }
         if (key != BUTTON_OK_KP_ID) continue;
-        bool cancelled;
-        if (!radar_job(operation, &result, &cancelled)) {
-            if (cancelled) return;
-            if (!radar_connected() && !radar_connect()) return;
-            radar_panel(title, "Could not measure", "Wi-Fi checked", "Try again", "Retry");
-            continue;
+
+        unsigned windows = operation != 1U ? 1U :
+                           calibrated ? measurement_windows : ROOM_RADAR_QUIET_WINDOWS;
+        unsigned low = ROOM_RADAR_MAX_SCORE, high = 0, total = 0;
+        room_radar_motion_result_t verdict = ROOM_RADAR_QUIET;
+        bool failed = false;
+        for (unsigned i = 0; i < windows; ++i) {
+            if (operation == 1U) {
+                snprintf(summary, sizeof(summary), "Window %u of %u", i + 1U, windows);
+                radar_panel(title, calibrated ? "Measuring motion" : "Recording quiet room",
+                            summary, "Keep the M1 still", NULL);
+            }
+            bool cancelled;
+            if (!radar_job(operation, &result, &cancelled)) {
+                if (cancelled) return;
+                if (!radar_connected()) {
+                    calibrated = false;
+                    if (!radar_connect()) return;
+                }
+                radar_panel(title, "Could not measure", "Check Wi-Fi and retry", NULL, "Retry");
+                failed = true;
+                break;
+            }
+            if (operation != 1U) break;
+            if (result.samples < ROOM_RADAR_MIN_SAMPLES) {
+                radar_panel(title, "Inconclusive", "Too few Wi-Fi samples", "Try closer to router", "Retry");
+                failed = true;
+                break;
+            }
+            if (result.value < low) low = result.value;
+            if (result.value > high) high = result.value;
+            total += result.value;
+            if (calibrated) {
+                room_radar_motion_result_t window = room_radar_classify(
+                    quiet_low, quiet_high, baseline, result.value);
+                if (window > verdict) verdict = window;
+            }
         }
+        if (failed) continue;
+
         if (operation == 2U) {
             snprintf(summary, sizeof(summary), "%u peers replied", result.value);
             char detail[28];
             snprintf(detail, sizeof(detail), "%u addresses checked", result.samples);
             radar_panel(title, summary, detail, "ICMP responders only", "Rescan");
-        } else if (result.samples < ROOM_RADAR_MIN_SAMPLES) {
-            radar_panel(title, "Too few CSI samples", "Try closer to router", NULL, "Retry");
         } else if (!calibrated) {
-            baseline = result.value;
-            calibrated = true;
-            radar_panel(title, "Baseline recorded", "Keep M1 in same spot", "Left recalibrates", "Measure");
+            baseline = total / windows;
+            quiet_low = low;
+            quiet_high = high;
+            calibrated = room_radar_baseline_stable(low, high, baseline);
+            snprintf(summary, sizeof(summary), "Quiet scores %u-%u", low, high);
+            radar_panel(title, calibrated ? "Baseline recorded" : "Inconclusive",
+                        summary, calibrated ? "Right: Change length" : "Try another spot",
+                        calibrated ? "Measure" : "Retry");
         } else {
-            snprintf(summary, sizeof(summary), "Score %u / base %u", result.value, baseline);
-            radar_panel(title, room_radar_motion(baseline, result.value) ? "Motion detected" : "Quiet window",
-                        summary, "Left recalibrates", "Measure");
+            snprintf(summary, sizeof(summary), "Avg %u / base %u", total / windows, baseline);
+            const char *label = verdict == ROOM_RADAR_MOTION ? "Motion detected" :
+                                verdict == ROOM_RADAR_INCONCLUSIVE ? "Inconclusive" : "No motion detected";
+            radar_panel(title, label, summary, verdict == ROOM_RADAR_INCONCLUSIVE ?
+                        "Try another spot" : "Right: Change length", "Measure");
         }
     }
 }

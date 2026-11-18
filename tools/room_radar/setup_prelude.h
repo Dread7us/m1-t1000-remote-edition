@@ -13,6 +13,7 @@ typedef uint32_t TickType_t;
 #define BUTTON_UP_KP_ID 2
 #define BUTTON_DOWN_KP_ID 3
 #define BUTTON_LEFT_KP_ID 4
+#define BUTTON_RIGHT_KP_ID 5
 static bool online, radio_online, recovery_ok, saved_network, fail_join;
 static unsigned scans, joins, password_prompts, recoveries, jobs, saved_panels;
 static unsigned key_count, key_index, ticks;

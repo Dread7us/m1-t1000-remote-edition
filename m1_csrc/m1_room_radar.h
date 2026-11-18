@@ -80,6 +80,27 @@ static inline bool room_radar_motion(unsigned baseline, unsigned score)
     return score > baseline + 12U + baseline / 2U;
 }
 
+#define ROOM_RADAR_QUIET_WINDOWS 3U
+
+typedef enum {
+    ROOM_RADAR_QUIET, ROOM_RADAR_INCONCLUSIVE, ROOM_RADAR_MOTION
+} room_radar_motion_result_t;
+
+static inline bool room_radar_baseline_stable(unsigned low, unsigned high, unsigned average)
+{
+    return high - low <= 12U + average / 4U;
+}
+
+static inline room_radar_motion_result_t room_radar_classify(
+    unsigned low, unsigned high, unsigned average, unsigned score)
+{
+    if (!room_radar_baseline_stable(low, high, average)) return ROOM_RADAR_INCONCLUSIVE;
+    if (room_radar_motion(average, score) && score > high + 6U) return ROOM_RADAR_MOTION;
+    unsigned margin = 6U + (high - low) / 2U;
+    if (score + margin < low || score > high + margin) return ROOM_RADAR_INCONCLUSIVE;
+    return ROOM_RADAR_QUIET;
+}
+
 /* ESP-AT quoted arguments escape separators and reject line/control bytes. */
 static inline bool room_radar_quote(const char *input, char *output, unsigned capacity)
 {

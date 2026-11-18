@@ -981,7 +981,8 @@ int main(void)
  reset();assert(!radar_connect() && joins==0);
  reset();simulated_status=ROOM_RADAR_ERROR_REPLY;radar_measure(1);assert(recoveries==0 && scans==0 && jobs==0);
  reset();simulated_status=ROOM_RADAR_OK_REPLY;online=true;radar_measure(2);assert(jobs==1 && key_index==0);
- reset();online=true;radar_measure(1);assert(jobs==1 && ticks>=5000 && saved_panels==1);
+ reset();online=true;radar_measure(1);assert(jobs==3 && ticks>=5000 && saved_panels==1);
+ reset();online=true;keys[0]=BUTTON_RIGHT_KP_ID;keys[1]=BUTTON_OK_KP_ID;key_count=2;radar_measure(1);assert(jobs==6 && saved_panels==1);
  reset();recovery_ok=true;assert(radar_radio_ready("Test") && recoveries==1);
  puts("PASS: actual Room Radar setup reuses an existing link, reconnects saved Wi-Fi, prompts/saves once, recovers radio and automatically starts LAN/calibration with Back cancellation");
  return 0;
