@@ -34,3 +34,19 @@ lines = [line for line in settings.splitlines()
                     for key in overrides)]
 lines.extend(key + b"=" + value for key, value in overrides.items())
 config.write_bytes(b"\n".join(lines) + b"\n")
+
+# ESP-AT owns the SPI transport. Add the stock scan compatibility task on UART0.
+spi = main / "interface/spi/at_spi_task_esp32_series.c"
+spi_source = spi.read_bytes()
+include = b'#include "stock_scan_uart.inc"'
+start = b"    room_radar_stock_uart_start();"
+if include not in spi_source:
+    task = b"void at_custom_init(void)"
+    marker = b"    xTaskCreate(at_spi_slave_task , \"at_spi_task\" , 4096 , NULL , 10 , NULL);"
+    if spi_source.count(task) != 1 or spi_source.count(marker) != 1:
+        parser.error("Unsupported SPI startup code")
+    nl = b"\r\n" if b"\r\n" in spi_source else b"\n"
+    spi_source = spi_source.replace(task, include + nl * 2 + task)
+    spi_source = spi_source.replace(marker, marker + nl + start)
+    spi.write_bytes(spi_source)
+shutil.copyfile(assets / "stock_scan_uart.inc", spi.parent / "stock_scan_uart.inc")

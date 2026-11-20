@@ -165,10 +165,11 @@ static bool radar_measure_csi(const esp_netif_ip_info_t *ip, const wifi_ap_recor
                               int netif_index, unsigned *samples, unsigned *score)
 {
     if (!ip->gw.addr) return false;
-    /* ESP32-C6 IDF acquisition configuration for legacy and HT20 frames. */
+    /* Accept the frame formats a 2.4 GHz access point can use for replies. */
     wifi_csi_config_t config = {
         .enable = true, .acquire_csi_legacy = true, .acquire_csi_ht20 = true,
-        .acquire_csi_su = true,
+        .acquire_csi_ht40 = true, .acquire_csi_su = true,
+        .acquire_csi_mu = true, .acquire_csi_dcm = true, .acquire_csi_beamformed = true,
     };
     portENTER_CRITICAL(&radar_lock);
     memset(&radar_metric, 0, sizeof(radar_metric));
@@ -179,8 +180,11 @@ static bool radar_measure_csi(const esp_netif_ip_info_t *ip, const wifi_ap_recor
     bool started = esp_wifi_set_csi_config(&config) == ESP_OK &&
                    esp_wifi_set_csi_rx_cb(radar_csi, NULL) == ESP_OK &&
                    esp_wifi_set_csi(true) == ESP_OK;
+    wifi_ps_type_t previous_ps;
+    bool restore_ps = started && esp_wifi_get_ps(&previous_ps) == ESP_OK &&
+                      previous_ps != WIFI_PS_NONE && esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK;
     bool heard = false;
-    bool done = started && radar_run_ping(ip->gw.addr, 32, 100, 6500, netif_index, &heard);
+    bool done = started && radar_run_ping(ip->gw.addr, 48, 85, 6500, netif_index, &heard);
     portENTER_CRITICAL(&radar_lock);
     radar_capture = false;
     *samples = radar_metric.frames;
@@ -188,6 +192,7 @@ static bool radar_measure_csi(const esp_netif_ip_info_t *ip, const wifi_ap_recor
     portEXIT_CRITICAL(&radar_lock);
     esp_wifi_set_csi(false);
     esp_wifi_set_csi_rx_cb(NULL, NULL);
+    if (restore_ps) esp_wifi_set_ps(previous_ps);
     return done;
 }
 #endif
