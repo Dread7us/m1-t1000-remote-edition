@@ -79,7 +79,7 @@ static void radar_save_status(const char *stage)
     f_close(&file);
 }
 
-static void radar_log_window(bool measuring, unsigned index, unsigned score, unsigned samples)
+static bool radar_log_window(bool measuring, unsigned index, unsigned score, unsigned samples)
 {
     FIL file;
     UINT written;
@@ -87,11 +87,13 @@ static void radar_log_window(bool measuring, unsigned index, unsigned score, uns
     int length = snprintf(line, sizeof(line), "%lu,%s,%u,%u,%u\r\n",
                           (unsigned long)HAL_GetTick(), measuring ? "measure" : "quiet",
                           index, score, samples);
-    if (length <= 0 || length >= (int)sizeof(line)) return;
+    if (length <= 0 || length >= (int)sizeof(line)) return false;
     f_mkdir("0:/System");
-    if (f_open(&file, "0:/System/room-motion.csv", FA_WRITE | FA_OPEN_APPEND) != FR_OK) return;
-    f_write(&file, line, (UINT)length, &written);
-    f_close(&file);
+    if (f_open(&file, "0:/System/room-motion.csv", FA_WRITE | FA_OPEN_APPEND) != FR_OK) return false;
+    bool saved = f_write(&file, line, (UINT)length, &written) == FR_OK &&
+                 written == (UINT)length && f_sync(&file) == FR_OK;
+    if (f_close(&file) != FR_OK) saved = false;
+    return saved;
 }
 
 static bool radar_radio_ready(const char *title)
@@ -369,6 +371,8 @@ static void radar_measure(unsigned operation)
     const char *title = operation == 1U ? "Room Motion" : "LAN Devices";
     room_radar_result_t result;
     room_radar_reply_t status;
+    if (operation == 1U && !radar_log_window(false, 0, 0, 0))
+        m1_message_box(&m1_u8g2, "Motion Log Not Saved", "Mount SD card", "Then retry", "OK");
     bool recovered = false;
     while (!radar_status(&result, &status)) {
         if (status == ROOM_RADAR_ERROR_REPLY) {
@@ -426,14 +430,19 @@ static void radar_measure(unsigned operation)
         unsigned low = ROOM_RADAR_MAX_SCORE, high = 0, total = 0;
         room_radar_motion_result_t verdict = ROOM_RADAR_QUIET;
         bool failed = false;
+        bool log_saved = true;
         for (unsigned i = 0; i < windows; ++i) {
             if (operation == 1U) {
                 snprintf(summary, sizeof(summary), "Window %u of %u", i + 1U, windows);
                 radar_panel(title, calibrated ? "Measuring motion" : "Recording quiet room",
                             summary, "Keep the M1 still", NULL);
             }
+            if (operation == 1U) memset(&result, 0, sizeof(result));
             bool cancelled;
             if (!radar_job(operation, &result, &cancelled)) {
+                if (operation == 1U &&
+                    !radar_log_window(calibrated, i + 1U, result.value, result.samples))
+                    m1_message_box(&m1_u8g2, "Motion Log Not Saved", "Mount SD card", "Then retry", "OK");
                 if (cancelled) return;
                 if (!radar_connected()) {
                     calibrated = false;
@@ -444,12 +453,12 @@ static void radar_measure(unsigned operation)
                 break;
             }
             if (operation != 1U) break;
+            log_saved = radar_log_window(calibrated, i + 1U, result.value, result.samples) && log_saved;
             if (result.samples < ROOM_RADAR_MIN_SAMPLES) {
                 radar_panel(title, "Inconclusive", "Too few Wi-Fi samples", "Try closer to router", "Retry");
                 failed = true;
                 break;
             }
-            radar_log_window(calibrated, i + 1U, result.value, result.samples);
             if (result.value < low) low = result.value;
             if (result.value > high) high = result.value;
             total += result.value;
@@ -459,6 +468,9 @@ static void radar_measure(unsigned operation)
                 if (window > verdict) verdict = window;
             }
         }
+        if (operation == 1U && !log_saved)
+            m1_message_box(&m1_u8g2, "Motion Log Not Saved", "Check mounted SD card",
+                           "Result not recorded", "OK");
         if (failed) continue;
 
         if (operation == 2U) {

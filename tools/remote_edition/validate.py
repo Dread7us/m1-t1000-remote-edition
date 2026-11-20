@@ -1255,5 +1255,49 @@ int main(void) {
 (out/'device-radio.c').write_text(radio_test)
 exe=compile('device-radio',[out/'device-radio.c']);print(run([exe]))
 
+
+motion_log_test=r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+typedef int FIL;
+typedef unsigned UINT;
+#define FR_OK 0
+#define FA_WRITE 2
+#define FA_OPEN_APPEND 48
+static int open_error,short_write,sync_error,close_error,closes;
+static char logged[100];
+static unsigned HAL_GetTick(void) {return 1234;}
+static int f_mkdir(const char *path) {(void)path;return 0;}
+static int f_open(FIL *file,const char *path,int flags) {
+ (void)file;assert(!strcmp(path,"0:/System/room-motion.csv"));
+ assert(flags==(FA_WRITE|FA_OPEN_APPEND));return open_error;
+}
+static int f_write(FIL *file,const void *data,unsigned size,unsigned *written) {
+ (void)file;assert(size<sizeof(logged));memcpy(logged,data,size);logged[size]=0;
+ *written=short_write?0:size;return 0;
+}
+static int f_sync(FIL *file) {(void)file;return sync_error;}
+static int f_close(FIL *file) {(void)file;++closes;return close_error;}
+""" + function_body((src/'m1_room_radar.c').read_text(encoding='utf-8'),
+                   'static bool radar_log_window(bool measuring, unsigned index, unsigned score, unsigned samples)') + r"""
+int main(void) {
+ assert(radar_log_window(false,0,0,0));
+ assert(!strcmp(logged,"1234,quiet,0,0,0\r\n"));
+ assert(radar_log_window(true,1,54,48));
+ assert(!strcmp(logged,"1234,measure,1,54,48\r\n"));
+ short_write=1;assert(!radar_log_window(false,1,0,0));short_write=0;
+ sync_error=1;assert(!radar_log_window(false,1,0,0));sync_error=0;
+ close_error=1;assert(!radar_log_window(false,1,0,0));close_error=0;
+ assert(closes==5);
+ open_error=1;assert(!radar_log_window(false,1,0,0));assert(closes==5);
+ puts("PASS: motion log records session starts and sparse samples and reports short writes, sync, close and open failures");
+ return 0;
+}
+"""
+(out/'motion-log.c').write_text(motion_log_test)
+exe=compile('motion-log',[out/'motion-log.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

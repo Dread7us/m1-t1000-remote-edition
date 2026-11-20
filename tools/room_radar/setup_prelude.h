@@ -75,5 +75,8 @@ static bool radar_job(unsigned operation, room_radar_result_t *result, bool *can
 
 static void mock_prepare(void) {}
 
-static void radar_log_window(bool measuring, unsigned index, unsigned score, unsigned samples)
-{ (void)measuring; (void)index; (void)score; (void)samples; }
+static bool radar_log_window(bool measuring, unsigned index, unsigned score, unsigned samples)
+{ (void)measuring; (void)index; (void)score; (void)samples; return true; }
+static void m1_message_box(void *display,const char *title,const char *a,const char *b,const char *button)
+{ (void)display; (void)title; (void)a; (void)b; (void)button; }
+static int m1_u8g2;
