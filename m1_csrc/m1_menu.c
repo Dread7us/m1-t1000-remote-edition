@@ -281,7 +281,7 @@ S_M1_Menu_t menu_Infrared_Universal_Remotes =
 
 S_M1_Menu_t menu_Infrared_Learn_New_Remote =
 {
-    "Learn", infrared_learn_new_remote, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "Learn Remote", infrared_learn_new_remote, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 S_M1_Menu_t menu_Infrared_Saved_Remotes =
@@ -304,10 +304,10 @@ static S_M1_Menu_t menu_Infrared_Automations =
 S_M1_Menu_t menu_Infrared =
 {
 #ifdef M1_APP_FILE_IMPORT_ENABLE
-    "Infrared", menu_infrared_init, NULL, NULL, 4, 0, menu_m1_icon_infrared, NULL,
+    "Remote Controls", menu_infrared_init, NULL, NULL, 4, 0, menu_m1_icon_infrared, NULL,
     {&menu_Infrared_Universal_Remotes, &menu_Infrared_Learn_New_Remote, &menu_Infrared_Saved_Remotes, &menu_Infrared_Automations}
 #else
-    "Infrared", menu_infrared_init, NULL, NULL, 4, 0, menu_m1_icon_infrared, NULL,
+    "Remote Controls", menu_infrared_init, NULL, NULL, 4, 0, menu_m1_icon_infrared, NULL,
     {&menu_Infrared_Universal_Remotes, &menu_Infrared_Learn_New_Remote, &menu_Infrared_Saved_Remotes, &menu_Infrared_Automations}
 #endif
 };
@@ -416,7 +416,7 @@ S_M1_Menu_t menu_Setting_Firmware_Update_Start =
 
 S_M1_Menu_t menu_Setting_Firmware_Swap_Banks =
 {
-    "Swap Banks", firmware_swap_banks, NULL, NULL, 0, 0, NULL, NULL, NULL
+    "Switch Firmware", firmware_swap_banks, NULL, NULL, 0, 0, NULL, NULL, NULL
 };
 
 

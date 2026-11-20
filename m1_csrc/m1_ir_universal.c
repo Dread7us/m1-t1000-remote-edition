@@ -1078,15 +1078,18 @@ static const uint8_t *remote_button_icon(const char *name)
 
 static void draw_remote_grid(const char *title, uint16_t selection)
 {
-    uint16_t first = (selection / 6) * 6;
+    ir_remote_page_t page = ir_remote_page(s_grid_order, s_grid_count, selection);
+    uint16_t first = page.first;
     char badge[16];
     u8g2_FirstPage(&m1_u8g2);
     u8g2_SetDrawColor(&m1_u8g2, M1_DISP_DRAW_COLOR_TXT);
     u8g2_SetFont(&m1_u8g2, u8g2_font_tiny5_tf);
     remote_draw_text(&m1_u8g2, 1, 7, 62, title, TEXT_ALIGN_CENTER);
     u8g2_DrawHLine(&m1_u8g2, 0, 10, 64);
-    for (uint16_t i = first; i < s_grid_count && i < first + 6; i++) {
-        uint8_t x = 3 + (i % 2) * 32, y = 14 + ((i - first) / 2) * 30;
+    for (uint16_t i = first; i < page.end; i++) {
+        bool single = i + 1 < page.end && s_grid_order[i + 1] == IR_REMOTE_EMPTY;
+        uint8_t x = single ? 19 : 3 + ((i - first) % 2) * 32;
+        uint8_t y = 14 + ((i - first) / 2) * 30;
         uint16_t command = s_grid_order[i];
         if (command == IR_REMOTE_EMPTY) continue;
         const uint8_t *icon = remote_button_icon(s_commands[command].name);
@@ -1100,7 +1103,7 @@ static void draw_remote_grid(const char *title, uint16_t selection)
         remote_draw_text(&m1_u8g2, x, y + 29, 28, s_commands[command].name, TEXT_ALIGN_CENTER);
     }
     u8g2_DrawHLine(&m1_u8g2, 0, 105, 64);
-    snprintf(badge, sizeof(badge), "%u/%u%s", (unsigned)(selection / 6) + 1, (unsigned)((s_grid_count + 5) / 6), s_remote_tx_started ? " TX" : "");
+    snprintf(badge, sizeof(badge), "%u/%u%s", (unsigned)page.number, (unsigned)page.pages, s_remote_tx_started ? " TX" : "");
     remote_draw_text(&m1_u8g2, 1, 112, 62, badge, TEXT_ALIGN_CENTER);
     remote_draw_text(&m1_u8g2, 1, 119, 62, ir_ota_tx_fault ? "IR failed" : "OK:Send", TEXT_ALIGN_CENTER);
     remote_draw_text(&m1_u8g2, 1, 127, 62, "Back:List", TEXT_ALIGN_CENTER);

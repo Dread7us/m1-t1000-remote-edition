@@ -577,7 +577,7 @@ void firmware_swap_banks(void)
     m1_u8g2_firstpage();
     do {
         u8g2_SetFont(&m1_u8g2, M1_DISP_SUB_MENU_FONT_B);
-        u8g2_DrawStr(&m1_u8g2, 4, 11, "Swap Banks");
+        u8g2_DrawStr(&m1_u8g2, 4, 11, "Switch Firmware");
 
         u8g2_SetFont(&m1_u8g2, M1_DISP_SUB_MENU_FONT_N);
 
@@ -585,11 +585,11 @@ void firmware_swap_banks(void)
         u8g2_DrawStr(&m1_u8g2, 4, 24, line1);
 
         if (bank_valid) {
-            sprintf(line2, "Swap to Bank %d?", target_bank);
+            sprintf(line2, "Boot Bank %d?", target_bank);
             u8g2_DrawStr(&m1_u8g2, 4, 36, line2);
 
             m1_info_box_display_init(false);
-            m1_info_box_display_draw(INFO_BOX_ROW_1, (const uint8_t *)"OK=Swap  BACK=Cancel");
+            m1_info_box_display_draw(INFO_BOX_ROW_1, (const uint8_t *)"OK=Boot  BACK=Cancel");
         } else {
             u8g2_DrawStr(&m1_u8g2, 4, 36, "Bank empty!");
 
@@ -615,11 +615,15 @@ void firmware_swap_banks(void)
         }
         else if (this_button_status.event[BUTTON_OK_KP_ID] == BUTTON_EVENT_CLICK && bank_valid)
         {
-            /* Show swapping message */
+            if (!bl_is_inactive_bank_valid()) {
+                m1_message_box(&m1_u8g2, "Cannot Switch", "Other bank is invalid", "Restore firmware first", "OK");
+                break;
+            }
+            /* Show restart message */
             m1_u8g2_firstpage();
             do {
                 u8g2_SetFont(&m1_u8g2, M1_DISP_SUB_MENU_FONT_B);
-                u8g2_DrawStr(&m1_u8g2, 4, 32, "Swapping...");
+                u8g2_DrawStr(&m1_u8g2, 4, 32, "Restarting...");
             } while (m1_u8g2_nextpage());
 
             bl_swap_banks();

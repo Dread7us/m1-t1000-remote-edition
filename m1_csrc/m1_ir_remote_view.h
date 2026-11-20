@@ -76,8 +76,7 @@ static inline uint16_t ir_remote_grid_build(const char *const *names, uint16_t c
                     slots[slot] = i; used[i] = true; break;
                 }
         }
-        /* Input is a useful alternative to Mute. Keep a vacant slot when
-           neither exists so volume/channel columns never move upward. */
+        /* Input is a useful alternative to Mute. */
         if (slots[1] == IR_REMOTE_EMPTY) {
             for (uint16_t i = 0; i < count; i++) {
                 char key[32]; unsigned k = 0;
@@ -97,8 +96,39 @@ static inline uint16_t ir_remote_grid_build(const char *const *names, uint16_t c
                 }
     }
     for (uint16_t i = 0; i < count; i++) if (!used[i]) slots[n++] = i;
+    uint16_t packed = 0;
+    for (uint16_t i = 0; i < n; ++i)
+        if (slots[i] != IR_REMOTE_EMPTY) slots[packed++] = slots[i];
+    n = packed;
     if (n & 1U) slots[n++] = IR_REMOTE_EMPTY;
     return n;
+}
+
+typedef struct {
+    uint16_t first, end, number, pages;
+} ir_remote_page_t;
+
+static inline ir_remote_page_t ir_remote_page(const uint16_t *slots, uint16_t count,
+                                              uint16_t selection)
+{
+    uint16_t buttons = count && slots[count - 1] == IR_REMOTE_EMPTY ? count - 1 : count;
+    ir_remote_page_t page = {0, 0, 0, (uint16_t)((buttons + 5) / 6)};
+    if (!buttons) return page;
+    if (selection >= buttons) selection = buttons - 1;
+    page.first = (selection / 6) * 6;
+    page.end = page.first + 6 < count ? page.first + 6 : count;
+    page.number = page.first / 6 + 1;
+    /* Balance the final two pages rather than leaving one control alone. */
+    if (buttons % 6 == 1 && page.pages > 1) {
+        uint16_t previous = (page.pages - 2) * 6;
+        if (selection >= previous) {
+            bool last = selection >= previous + 4;
+            page.first = previous + (last ? 4 : 0);
+            page.end = last ? count : previous + 4;
+            page.number = page.pages - (last ? 0 : 1);
+        }
+    }
+    return page;
 }
 
 static inline uint16_t ir_remote_grid_move(uint16_t selected, const uint16_t *slots,

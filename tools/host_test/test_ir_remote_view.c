@@ -41,8 +41,8 @@ int main(void)
     assert(n==6 && slots[0]==1 && slots[1]==3 && slots[2]==0 && slots[3]==5 && slots[4]==4 && slots[5]==2);
     const char *sparse[]={"Vol_up","Power","Ch_down"};
     n=ir_remote_grid_build(sparse,3,slots,IR_REMOTE_GRID_MAX);
-    assert(slots[0]==1 && slots[1]==IR_REMOTE_EMPTY && slots[2]==0 && slots[5]==2);
-    assert(ir_remote_grid_move(0,slots,n,1,0)==2);
+    assert(n==4 && slots[0]==1 && slots[1]==0 && slots[2]==2 && slots[3]==IR_REMOTE_EMPTY);
+    assert(ir_remote_grid_move(0,slots,n,1,0)==1);
     assert(ir_remote_grid_move(2,slots,n,0,1)==0);
     char storage[64][32]; const char *names[64];
     for(unsigned i=0;i<64;i++) { snprintf(storage[i],32,"Button%u",i); names[i]=storage[i]; }
@@ -58,8 +58,17 @@ int main(void)
             }
         }
         for(uint16_t i=0;i<count;i++) assert(seen[i]==1);
+        for (uint16_t i=0;i<count;i++) {
+            ir_remote_page_t page=ir_remote_page(slots,n,i);
+            assert(page.first<=i && i<page.end && page.end<=n);
+            assert(page.end-page.first<=6 && !(page.first&1));
+            unsigned populated=0;
+            for(uint16_t j=page.first;j<page.end;j++) if(slots[j]!=IR_REMOTE_EMPTY) ++populated;
+            assert(count==1 || populated>=2);
+            assert(page.number>=1 && page.number<=page.pages);
+        }
     }
-    puts("PASS: semantic layout, shuffled file order, missing Mute/Input fallback, vacant slots, stable signal indexes, all 64 commands");
+    puts("PASS: semantic layout, shuffled file order, missing Mute/Input fallback, compact sparse layouts, stable signal indexes, all 64 commands");
     puts("PASS: all remote navigation states for 0..64 buttons, odd final rows, wraparound, all pages, icon aliases");
     return 0;
 }
