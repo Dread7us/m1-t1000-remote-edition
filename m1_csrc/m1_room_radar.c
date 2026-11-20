@@ -79,6 +79,21 @@ static void radar_save_status(const char *stage)
     f_close(&file);
 }
 
+static void radar_log_window(bool measuring, unsigned index, unsigned score, unsigned samples)
+{
+    FIL file;
+    UINT written;
+    char line[80];
+    int length = snprintf(line, sizeof(line), "%lu,%s,%u,%u,%u\r\n",
+                          (unsigned long)HAL_GetTick(), measuring ? "measure" : "quiet",
+                          index, score, samples);
+    if (length <= 0 || length >= (int)sizeof(line)) return;
+    f_mkdir("0:/System");
+    if (f_open(&file, "0:/System/room-motion.csv", FA_WRITE | FA_OPEN_APPEND) != FR_OK) return;
+    f_write(&file, line, (UINT)length, &written);
+    f_close(&file);
+}
+
 static bool radar_radio_ready(const char *title)
 {
     radar_panel(title, "Checking Wi-Fi", "Please wait...", NULL, NULL);
@@ -434,6 +449,7 @@ static void radar_measure(unsigned operation)
                 failed = true;
                 break;
             }
+            radar_log_window(calibrated, i + 1U, result.value, result.samples);
             if (result.value < low) low = result.value;
             if (result.value > high) high = result.value;
             total += result.value;
@@ -467,6 +483,11 @@ static void radar_measure(unsigned operation)
                         "Try another spot" : "Right: Change length", "Measure");
         }
     }
+}
+
+bool room_radar_connect_network(void)
+{
+    return radar_radio_ready("Wi-Fi Setup") && radar_connect();
 }
 
 void room_radar_open_map(void)

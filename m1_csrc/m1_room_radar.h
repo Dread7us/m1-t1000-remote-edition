@@ -138,5 +138,6 @@ void room_radar_run(void);
 void room_radar_open_map(void);
 void room_radar_open_motion(void);
 void room_radar_open_lan(void);
+bool room_radar_connect_network(void);
 
 #endif

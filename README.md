@@ -1,5 +1,11 @@
 <div align="center">
 
+**RoomScope OS development:** the Room Radar dashboard opens on startup. **Tools > Saved Test Devices** stores up to 16 named LAN, Wi-Fi access point, or Bluetooth LE addresses. Add, rename, edit, and delete entries on the M1. LAN entries offer **Check Connection**, with results saved to `System/device-checks.tsv`. Wi-Fi scan entries added through the existing target-list action are also saved here. Bluetooth entries currently store identity only. Router-controlled recovery tests and Bluetooth security checks are planned.
+
+Room Motion calibrates across three quiet windows. Right switches between a one-window or three-window measurement. An unstable baseline or out-of-range reading produces **Inconclusive**. Each quiet and measurement window is recorded in `System/room-motion.csv` as uptime milliseconds, phase, window index, score, and sample count. Physical motion reliability remains under evaluation.
+
+
+
 # T-1000 Remote Edition
 
 ### Classic M1 controls. Built on the work of T-1000.

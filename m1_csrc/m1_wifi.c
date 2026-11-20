@@ -20,6 +20,7 @@
 #include "main.h"
 #include "m1_wifi.h"
 #include "m1_room_radar.h"
+#include "m1_device_library.h"
 #include "m1_esp32_hal.h"
 //#include "control.h"
 #include "ctrl_api.h"
@@ -2341,6 +2342,8 @@ static void wifi_attack_add_target(const wifi_scanlist_t *ap)
 		s_attack_targets[s_attack_target_count].ssid[32] = '\0';
 	}
 
+	if (!device_library_save_ap(s_attack_targets[s_attack_target_count].ssid, bssid_str))
+		m1_message_box(&m1_u8g2, "Device Not Saved", "Check SD card or list", "", "OK");
 	s_attack_targets[s_attack_target_count].channel = ap->channel;
 	s_attack_target_count++;
 }

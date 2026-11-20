@@ -19,6 +19,7 @@
 #include "m1_display.h"
 #include "m1_menu.h"
 #include "m1_room_radar.h"
+#include "m1_device_library.h"
 #include "m1_settings.h"
 #include "m1_system.h"
 
@@ -132,12 +133,14 @@ static S_M1_Menu_t menu_Power =
 #define ENT_ESPLINK
 #endif
 
-#define MAIN_MENU_COUNT  (10 + OPT_BADUSB + OPT_GAMES + OPT_APPS + OPT_ESPLINK)
+#define MAIN_MENU_COUNT  (11 + OPT_BADUSB + OPT_GAMES + OPT_APPS + OPT_ESPLINK)
+
+static S_M1_Menu_t menu_Test_Devices = {.title = "Saved Test Devices", .sub_func = device_library_run};
 
 static S_M1_Menu_t menu_Tools =
 {
     "Tools", NULL, NULL, NULL, MAIN_MENU_COUNT, 0, NULL, NULL,
-    {&menu_Sub_GHz, &menu_125KHz_RFID, &menu_NFC, &menu_Infrared, &menu_GPIO,
+    {&menu_Test_Devices, &menu_Sub_GHz, &menu_125KHz_RFID, &menu_NFC, &menu_Infrared, &menu_GPIO,
      &menu_Wifi, &menu_Bluetooth,
      ENT_ESPLINK
      ENT_BADUSB

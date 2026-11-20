@@ -1,6 +1,6 @@
 # Room Radar
 
-Open **WiFi 2.4G → Room Radar**. The main screen offers Wi-Fi map and Room motion. Advanced holds Radio status, LAN devices, and Hotspot clients. Radio status checks both the basic radio link and the optional sensing command, and saves the result to the SD card. All observations stay on the M1. The map writes to `System/room-radar.tsv` on the SD card. Motion and LAN results stay in memory.
+Open **WiFi 2.4G → Room Radar**. The main screen offers Wi-Fi map and Room motion. Advanced holds Radio status, LAN devices, and Hotspot clients. Radio status checks both the basic radio link and the optional sensing command, and saves the result to the SD card. All observations stay on the M1. The map writes to `System/room-radar.tsv` on the SD card. Motion windows also append to `System/room-motion.csv` when the SD card is mounted; LAN results stay in memory.
 
 | View | What it measures | Requirements |
 | --- | --- | --- |
@@ -11,7 +11,8 @@ Open **WiFi 2.4G → Room Radar**. The main screen offers Wi-Fi map and Room mot
 
 Revision 16 reuses the current connection or tries the strongest visible saved network. If needed, select a network and enter its password directly in Room Radar; successful credentials are saved. Full Wi-Fi passwords are supported. LAN discovery starts automatically. Hotspot clients can create the M1 hotspot in place. Wi-Fi map reads immediately; Right names the spot and OK saves it.
 
-For a room test, open **Room motion**, set the M1 down, and keep the room still during the five-second countdown and automatic baseline. Once the baseline is recorded, press OK to measure again. Test an empty room and a person crossing the room with their phone's Wi-Fi off. Repeat while the person sits still. Left discards the baseline so you can recalibrate after moving the M1 or changing Wi-Fi networks. **Quiet window** means the signal was below the motion threshold during that measurement. Motion may also come from fans, pets, or movement outside the intended area. There is no head-count estimate.
+For a room test, open **Room Motion**, set the M1 down, and keep the room still during the five-second placement pause and three quiet calibration windows. A variable quiet baseline produces **Inconclusive**. Press OK to measure; Right selects one window (Quick) or three windows (Extended). Left discards the baseline. **No motion detected** means no window crossed the detector threshold. **Inconclusive** includes readings outside the calibrated quiet range that do not provide enough evidence to classify motion. Test still versus walking in the same placement. The current sensor has not yet demonstrated reliable separation on the owner's M1, and it does not estimate people counts.
+
 
 The LAN view discovers the station subnet automatically. It uses a single bound ICMP socket, tests at most 253 other addresses, and discards unrelated replies. There is no router login or model-specific dependency. Start it only on a network you manage. The motion view filters CSI frames from the associated access point, pings the IPv4 gateway for a bounded measurement, and returns a score and sample count. Back requests cancellation. The coprocessor also ends the job on its own timeout.
 

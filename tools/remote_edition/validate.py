@@ -1115,5 +1115,61 @@ int main(void)
 (out/'esp-flash-retry.c').write_text(flash_retry)
 exe=compile('esp-flash-retry',[out/'esp-flash-retry.c']);print(run([exe]))
 
+
+device_source=(src/'m1_device_library.c').read_text(encoding='utf-8')
+device_test=r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "ff.h"
+#include "m1_device_library.h"
+#define DEVICE_PATH "0:/System/devices.dat"
+static saved_device_t devices[DEVICE_LIMIT];
+static unsigned device_count;
+static bool recovered_backup;
+static int fail_write, fail_replace;
+static unsigned f_size(FIL *f) {
+    long position=ftell(f->fp);fseek(f->fp,0,SEEK_END);long size=ftell(f->fp);fseek(f->fp,position,SEEK_SET);return (unsigned)size;
+}
+static FRESULT f_write(FIL *f,const void *data,UINT size,UINT *written) {
+    *written=fail_write?0:(UINT)fwrite(data,1,size,f->fp);return fail_write?FR_DISK_ERR:FR_OK;
+}
+static FRESULT f_sync(FIL *f) {return fflush(f->fp)?FR_DISK_ERR:FR_OK;}
+static FRESULT f_mkdir(const char *path) {(void)path;return FR_OK;}
+static FRESULT device_rename(const char *a,const char *b) {
+    if(fail_replace && strstr(a,".tmp"))return FR_DISK_ERR;
+    return f_rename(a,b);
+}
+#define f_rename device_rename
+"""
+for sig in ['static bool load_file(const char *path)', 'static bool load(void)', 'static bool save(void)', 'static int duplicate(const saved_device_t *device, int except)', 'static void normalize(saved_device_t *device)', 'bool device_library_save_ap(const char *name, const char *bssid)']:
+ device_test+='\n'+function_body(device_source,sig)
+device_test+=r"""
+int main(void) {
+ remove("System/devices.dat");remove("System/devices.dat.bak");remove("System/devices.dat.tmp");
+ assert(device_address_valid(0,"192.168.1.2"));
+ assert(!device_address_valid(0,"192.168.1.2\r"));
+ assert(!device_address_valid(0,"8.8.8.8"));
+ assert(device_address_valid(2,"aa:BB:cc:12:34:56"));
+ assert(!device_address_valid(2,"aa:BB:cc:12:34:5x"));
+ assert(device_library_save_ap("Router","AA:BB:CC:11:22:33"));
+ assert(load() && device_count==1);
+ assert(device_library_save_ap("Duplicate","aa:bb:cc:11:22:33") && device_count==1);
+ strcpy(devices[0].name,"Renamed");assert(save() && load() && !strcmp(devices[0].name,"Renamed"));
+ strcpy(devices[0].address,"aa:bb:cc:11:22:44");assert(save() && load() && strstr(devices[0].address,"44"));
+ fail_write=1;strcpy(devices[0].name,"Lost");assert(!save());fail_write=0;assert(load() && !strcmp(devices[0].name,"Renamed"));
+ fail_replace=1;device_count=0;assert(!save());fail_replace=0;assert(load() && device_count==1);
+ assert(save()); /* Establish a last-known-good backup before corruption. */
+ FILE *file=fopen("System/devices.dat","wb");assert(file);fputs("bad",file);fclose(file);
+ assert(load() && recovered_backup && device_count==1);
+ fail_replace=1;assert(!save());fail_replace=0;assert(load() && device_count==1);
+ device_count=0;assert(save() && load() && device_count==0);
+ puts("PASS: saved devices survive reload, rename/edit/delete, duplicates, short writes and interrupted replacements");
+ return 0;
+}
+"""
+(out/'device-library.c').write_text(device_test)
+exe=compile('device-library',[out/'device-library.c',shim/'ff_shim.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')

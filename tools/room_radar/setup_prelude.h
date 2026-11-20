@@ -74,3 +74,6 @@ static bool radar_job(unsigned operation, room_radar_result_t *result, bool *can
 }
 
 static void mock_prepare(void) {}
+
+static void radar_log_window(bool measuring, unsigned index, unsigned score, unsigned samples)
+{ (void)measuring; (void)index; (void)score; (void)samples; }
