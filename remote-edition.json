@@ -3,7 +3,7 @@
   "maintainer": "Dread7us",
   "upstream_repository": "https://github.com/dagnazty/M1_T-1000",
   "upstream_commit": "268d8ca1f9ac9bb568ed54f869af83f3bf151c1e",
-  "edition_revision": "21",
+  "edition_revision": "22",
   "revision_4_hardware_status": "Owner confirmed boot and Right skips Mute to Volume Up",
   "revision_3_hardware_status": "Owner confirmed boot, avatar splash and clean title on the M1",
   "revision_2_hardware_status": "Owner confirmed boot and correct semantic remote layout; grouped learning awaits physical confirmation",
@@ -32,5 +32,6 @@
   "revision_19_hardware_status": "Device verified the write. Owner reported a freeze and reboot after changing Sort By.",
   "revision_20_hardware_status": "Menu viewport bounds corrected. Hardware retest pending.",
   "roomscope_hardware_status": "Owner confirmed Wi-Fi Signal Map and LAN Devices. Single-window motion calibration succeeded but still/walking scores overlapped. Multi-window calibration hardware result pending.",
-  "saved_device_status": "Build and native persistence tests passed; physical verification pending."
+  "saved_device_status": "Build and native persistence tests passed; physical verification pending.",
+  "saved_device_radio_tests": "Saved BSSID Wi-Fi signal/security/availability and saved-address BLE advertisement/availability/privacy tests. Native exact-address and cleanup checks pass. Hardware verification pending."
 }

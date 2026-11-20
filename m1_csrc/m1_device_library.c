@@ -7,6 +7,7 @@
 #include "m1_device_library.h"
 #include "esp_app_main.h"
 #include "ff.h"
+#include <stdlib.h>
 
 #define DEVICE_PATH "0:/System/devices.dat"
 static saved_device_t devices[DEVICE_LIMIT];
@@ -189,6 +190,142 @@ static void reachability(const saved_device_t *device)
     m1_message_box(&m1_u8g2, replied ? "Device Responded" : "No Reply", device->address,
                    saved ? "Report saved to SD" : "Report could not save", "OK");
 }
+static bool bluetooth_observe(const char *address, device_observation_t *result)
+{
+    memset(result, 0, sizeof(*result));
+    wifi_room_radar_prepare();
+    char response[96] = {0};
+    if (spi_AT_send_recv("AT+BLEINIT?\r\n", response, sizeof(response), 3) != SUCCESS ||
+        room_radar_reply_status(response) != ROOM_RADAR_OK_REPLY) return false;
+    const char *state = strstr(response, "+BLEINIT:");
+    if (!state || (state[9] != '0' && state[9] != '1')) return false;
+    bool initialized_here = state[9] == '0';
+    ctrl_cmd_t request = CTRL_CMD_DEFAULT_REQ();
+    request.cmd_timeout_sec = 8;
+    bool ok = ble_scan_list_ex(&request) == SUCCESS &&
+              request.resp_event_status == SUCCESS;
+    for (int i = 0; ok && i < request.u.ble_scan.count; ++i) {
+        const ble_scanlist_t *device = &request.u.ble_scan.out_list[i];
+        if (!device_address_equal(address, (const char *)device->addr)) continue;
+        if (result->found && result->rssi >= device->rssi) continue;
+        result->found = true;
+        result->rssi = device->rssi;
+        result->address_type = device->addr_type;
+        snprintf(result->name, sizeof(result->name), "%.32s", device->name);
+    }
+    free(request.u.ble_scan.out_list);
+    bool cleaned = true;
+    if (!ok) {
+        cleaned = spi_AT_send_recv("AT+BLESCAN=0\r\n", response, sizeof(response), 3) == SUCCESS &&
+                  room_radar_reply_status(response) == ROOM_RADAR_OK_REPLY;
+    }
+    if (initialized_here) {
+        cleaned = spi_AT_send_recv("AT+BLEINIT=0\r\n", response, sizeof(response), 3) == SUCCESS &&
+                  room_radar_reply_status(response) == ROOM_RADAR_OK_REPLY && cleaned;
+    }
+    return ok && cleaned;
+}
+
+static bool report_observation(const saved_device_t *device, unsigned round,
+                               bool ok, const device_observation_t *result)
+{
+    FIL file;
+    UINT written;
+    char line[160];
+    int size = snprintf(line, sizeof(line), "%lu\t%s\t%u\t%s\t%u\t%s\t%d\t%u\t%u\t%u\r\n",
+                        (unsigned long)HAL_GetTick(), device->name, device->kind, device->address,
+                        round, !ok ? "scan failed" : result->found ? "seen" : "not seen",
+                        result->found ? result->rssi : 0, result->channel,
+                        result->security, result->address_type);
+    if (size <= 0 || size >= (int)sizeof(line) ||
+        f_open(&file, "0:/System/device-radio-tests.tsv", FA_WRITE | FA_OPEN_APPEND) != FR_OK) return false;
+    bool saved = f_write(&file, line, (UINT)size, &written) == FR_OK && written == (UINT)size;
+    if (f_close(&file) != FR_OK) saved = false;
+    return saved;
+}
+
+static bool test_cancelled(void)
+{
+    S_M1_Main_Q_t event;
+    S_M1_Buttons_Status buttons;
+    while (xQueueReceive(main_q_hdl, &event, 0) == pdTRUE) {
+        if (event.q_evt_type == Q_EVENT_KEYPAD &&
+            xQueueReceive(button_events_q_hdl, &buttons, 0) == pdTRUE &&
+            buttons.event[BUTTON_BACK_KP_ID] == BUTTON_EVENT_CLICK) return true;
+    }
+    return false;
+}
+
+static const char *security_name(unsigned mode)
+{
+    switch (mode) {
+    case WIFI_AUTH_OPEN: return "Open";
+    case WIFI_AUTH_WEP: return "WEP";
+    case WIFI_AUTH_WPA_PSK: return "WPA";
+    case WIFI_AUTH_WPA2_PSK: return "WPA2";
+    case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2";
+    case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2 Enterprise";
+    case WIFI_AUTH_WPA3_PSK: return "WPA3";
+    case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+    default: return "Unknown";
+    }
+}
+
+static void radio_test(const saved_device_t *device, unsigned action)
+{
+    unsigned rounds = action == 1 ? 3 : 1;
+    unsigned seen = 0, completed = 0, failures = 0;
+    int weakest = 0, strongest = -127;
+    bool reports_saved = true;
+    device_observation_t observation = {0};
+    for (unsigned round = 1; round <= rounds; ++round) {
+        char progress[32];
+        snprintf(progress, sizeof(progress), "Scan %u of %u", round, rounds);
+        m1_u8g2_firstpage();
+        m1_draw_status_panel(&m1_u8g2, device->kind == 1 ? "Wi-Fi Device Test" : "Bluetooth Device Test",
+                            NULL, NULL, 0, 0, device->name, progress, "Back stops after scan");
+        m1_u8g2_nextpage();
+        bool ok = device->kind == 1 ? wifi_test_saved_ap(device->address, &observation) :
+                                     bluetooth_observe(device->address, &observation);
+        reports_saved = report_observation(device, round, ok, &observation) && reports_saved;
+        ++completed;
+        if (!ok) ++failures;
+        else if (observation.found) {
+            ++seen;
+            if (observation.rssi < weakest) weakest = observation.rssi;
+            if (observation.rssi > strongest) strongest = observation.rssi;
+        }
+        if (test_cancelled()) break;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    char summary[32], detail[40];
+    snprintf(summary, sizeof(summary), "Seen %u / %u scans", seen, completed);
+    if (failures) snprintf(detail, sizeof(detail), "%u scan(s) failed", failures);
+    else if (!seen) snprintf(detail, sizeof(detail), "Address not observed");
+    else if (action == 2 && device->kind == 1)
+        snprintf(detail, sizeof(detail), "Ch %u %s", observation.channel, security_name(observation.security));
+    else if (action == 2)
+        snprintf(detail, sizeof(detail), "%s address", observation.address_type ? "Random" : "Public");
+    else snprintf(detail, sizeof(detail), "Signal %d to %d dBm", weakest, strongest);
+    m1_message_box(&m1_u8g2, device->name, summary, detail, "OK");
+    if (action == 2 && seen && !failures) {
+        if (device->kind == 1)
+            message("Wi-Fi Security", observation.security == WIFI_AUTH_OPEN ? "Open network" :
+                    observation.security == WIFI_AUTH_WEP ? "Legacy WEP" : security_name(observation.security));
+        else message("Bluetooth Privacy", observation.address_type ? "Address may change" : "Public address visible");
+    }
+    if (!reports_saved) message("Report Not Saved", "Check mounted SD card");
+}
+
+static void device_tests(const saved_device_t *device)
+{
+    if (device->kind == 0) { reachability(device); return; }
+    static const char *const wifi_tests[] = {"Check Signal", "Watch Availability", "Check Wi-Fi Security"};
+    static const char *const bluetooth_tests[] = {"Check Advertisement", "Watch Availability", "Check Address Privacy"};
+    int action = choose(device->name, device->kind == 1 ? wifi_tests : bluetooth_tests, 3);
+    if (action >= 0) radio_test(device, (unsigned)action);
+}
+
 void device_library_run(void)
 {
     if (!load()) {
@@ -210,10 +347,10 @@ void device_library_run(void)
             continue;
         }
         unsigned index = (unsigned)selected - 1;
-        static const char *const actions[] = {"Check Connection", "View Address", "Rename Device", "Edit Address", "Delete Device"};
+        static const char *const actions[] = {"Run Device Test", "View Address", "Rename Device", "Edit Address", "Delete Device"};
         int action = choose(devices[index].name, actions, 5);
         if (action < 0) continue;
-        if (action == 0) reachability(&devices[index]);
+        if (action == 0) device_tests(&devices[index]);
         else if (action == 1) message("Saved Address", devices[index].address);
         else {
             saved_device_t device = devices[index];

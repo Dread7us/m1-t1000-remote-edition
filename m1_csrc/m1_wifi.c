@@ -789,6 +789,26 @@ bool wifi_room_radar_scan(room_radar_reading_t *reading)
     return found;
 }
 
+bool wifi_test_saved_ap(const char *bssid, device_observation_t *result)
+{
+    ctrl_cmd_t request = CTRL_CMD_DEFAULT_REQ();
+    memset(result, 0, sizeof(*result));
+    if (!wifi_ensure_esp32_ready()) return false;
+    bool ok = wifi_run_scan(&request, 1);
+    for (int i = 0; ok && i < request.u.wifi_ap_scan.count; ++i) {
+        const wifi_scanlist_t *ap = &request.u.wifi_ap_scan.out_list[i];
+        if (!device_address_equal(bssid, (const char *)ap->bssid)) continue;
+        result->found = true;
+        result->rssi = ap->rssi;
+        result->channel = ap->channel;
+        result->security = ap->encryption_mode;
+        snprintf(result->name, sizeof(result->name), "%.32s", ap->ssid);
+        break;
+    }
+    wifi_free_scan_results(&request);
+    return ok;
+}
+
 bool wifi_room_radar_recover(void)
 {
     m1_esp32_deinit();

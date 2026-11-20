@@ -39,6 +39,23 @@ static inline bool device_valid(const saved_device_t *device)
         if ((unsigned char)*p < 32 || (unsigned char)*p == 127) return false;
     return device_address_valid(device->kind, device->address);
 }
+typedef struct {
+    bool found;
+    int rssi;
+    unsigned channel;
+    unsigned security;
+    unsigned address_type;
+    char name[33];
+} device_observation_t;
+
+static inline bool device_address_equal(const char *a, const char *b)
+{
+    while (*a && *b) {
+        if (tolower((unsigned char)*a++) != tolower((unsigned char)*b++)) return false;
+    }
+    return *a == *b;
+}
+bool wifi_test_saved_ap(const char *bssid, device_observation_t *result);
 void device_library_run(void);
 bool device_library_save_ap(const char *name, const char *bssid);
 #endif

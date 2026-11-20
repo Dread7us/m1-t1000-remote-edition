@@ -1171,5 +1171,89 @@ int main(void) {
 (out/'device-library.c').write_text(device_test)
 exe=compile('device-library',[out/'device-library.c',shim/'ff_shim.c']);print(run([exe]))
 
+
+radio_test=r"""
+#include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "m1_device_library.h"
+#include "m1_room_radar.h"
+#define SUCCESS 0
+#define ERROR 1
+#define CTRL_CMD_DEFAULT_REQ() (ctrl_cmd_t){0}
+typedef struct { unsigned char ssid[33],bssid[18];int rssi,channel,encryption_mode; } wifi_scanlist_t;
+typedef struct { unsigned char name[33],addr[18];int rssi;unsigned char addr_type; } ble_scanlist_t;
+typedef struct {
+ int cmd_timeout_sec,resp_event_status;
+ union {
+  struct {int count;wifi_scanlist_t *out_list;} wifi_ap_scan;
+  struct {int count;ble_scanlist_t *out_list;} ble_scan;
+ } u;
+} ctrl_cmd_t;
+static bool scan_ok=true, visible=true, ready=true, mode_query_ok=true;
+static unsigned releases,stops,deinits,prepares;
+static int prior_mode;
+static bool wifi_ensure_esp32_ready(void) {return ready;}
+static bool wifi_run_scan(ctrl_cmd_t *request,unsigned attempts) {
+ assert(attempts==1);
+ request->u.wifi_ap_scan.out_list=calloc(2,sizeof(wifi_scanlist_t));
+ request->u.wifi_ap_scan.count=2;
+ strcpy((char *)request->u.wifi_ap_scan.out_list[0].bssid,"aa:bb:cc:00:00:01");
+ strcpy((char *)request->u.wifi_ap_scan.out_list[1].bssid,visible?"AA:BB:CC:11:22:33":"aa:bb:cc:00:00:02");
+ strcpy((char *)request->u.wifi_ap_scan.out_list[1].ssid,"Home");
+ request->u.wifi_ap_scan.out_list[1].rssi=-42;
+ request->u.wifi_ap_scan.out_list[1].channel=10;
+ request->u.wifi_ap_scan.out_list[1].encryption_mode=3;
+ return scan_ok;
+}
+static void wifi_free_scan_results(ctrl_cmd_t *request) {free(request->u.wifi_ap_scan.out_list);++releases;}
+static void wifi_room_radar_prepare(void) {++prepares;}
+static int spi_AT_send_recv(const char *command,char *response,int capacity,int timeout) {
+ (void)timeout;
+ if(!strcmp(command,"AT+BLEINIT?\r\n")) {
+  snprintf(response,capacity,mode_query_ok?"+BLEINIT:%d\r\nOK\r\n":"ERROR\r\n",prior_mode);
+  return SUCCESS;
+ }
+ if(!strcmp(command,"AT+BLEINIT=0\r\n")) {++deinits;strcpy(response,"OK\r\n");return SUCCESS;}
+ if(!strcmp(command,"AT+BLESCAN=0\r\n")) {++stops;strcpy(response,"OK\r\n");return SUCCESS;}
+ assert(0);return ERROR;
+}
+static int ble_scan_list_ex(ctrl_cmd_t *request) {
+ request->u.ble_scan.out_list=calloc(2,sizeof(ble_scanlist_t));
+ request->u.ble_scan.count=2;
+ for(int i=0;i<2;++i) {
+  strcpy((char *)request->u.ble_scan.out_list[i].addr,visible?"AA:BB:CC:11:22:33":"aa:bb:cc:00:00:02");
+  strcpy((char *)request->u.ble_scan.out_list[i].name,"My sensor");
+  request->u.ble_scan.out_list[i].rssi=i?-45:-75;
+  request->u.ble_scan.out_list[i].addr_type=1;
+ }
+ request->resp_event_status=scan_ok?SUCCESS:ERROR;
+ return scan_ok?SUCCESS:ERROR;
+}
+"""
+radio_test+='\n'+function_body((src/'m1_wifi.c').read_text(encoding='utf8'),'bool wifi_test_saved_ap(const char *bssid, device_observation_t *result)')
+radio_test+='\n'+function_body(device_source,'static bool bluetooth_observe(const char *address, device_observation_t *result)')
+radio_test+=r"""
+int main(void) {
+ device_observation_t result;
+ assert(wifi_test_saved_ap("aa:bb:cc:11:22:33",&result) && result.found && result.rssi==-42 && result.channel==10);
+ visible=false;assert(wifi_test_saved_ap("aa:bb:cc:11:22:33",&result) && !result.found);
+ scan_ok=false;assert(!wifi_test_saved_ap("aa:bb:cc:11:22:33",&result));
+ assert(releases==3);
+ scan_ok=visible=true;
+ assert(bluetooth_observe("aa:bb:cc:11:22:33",&result) && result.found && result.rssi==-45 && result.address_type==1);
+ assert(deinits==1 && stops==0);
+ prior_mode=1;assert(bluetooth_observe("aa:bb:cc:11:22:33",&result) && deinits==1);
+ scan_ok=false;assert(!bluetooth_observe("aa:bb:cc:11:22:33",&result) && stops==1);
+ prior_mode=0;assert(!bluetooth_observe("aa:bb:cc:11:22:33",&result) && deinits==2);
+ prior_mode=2;assert(!bluetooth_observe("aa:bb:cc:11:22:33",&result));
+ prior_mode=0;mode_query_ok=false;assert(!bluetooth_observe("aa:bb:cc:11:22:33",&result));
+ puts("PASS: exact saved radio address matching, absent versus failed scans, strongest BLE result and prior BLE mode cleanup");
+ return 0;
+}
+"""
+(out/'device-radio.c').write_text(radio_test)
+exe=compile('device-radio',[out/'device-radio.c']);print(run([exe]))
+
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')
