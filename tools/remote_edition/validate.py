@@ -1300,6 +1300,110 @@ int main(void) {
 exe=compile('motion-log',[out/'motion-log.c']);print(run([exe]))
 
 
+# Exercise the actual firmware checksum functions against an independent bitwise
+# implementation, including every table entry and fragmented payloads.
+rpc_source=(src/'m1_rpc.c').read_text()
+table=rpc_source[rpc_source.index('static const uint16_t s_crc16_table[256]'):]
+table=table[:table.index('};')+2]
+rpc_crc_test=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#define CRC16_INIT 0xFFFF
+"""+table+'\n'+function_body(rpc_source,'static uint16_t rpc_crc16(const uint8_t *data, uint16_t len)')+'\n'+function_body(rpc_source,'static uint16_t rpc_crc16_continue(uint16_t crc, const uint8_t *data, uint16_t len)')+r"""
+static uint16_t reference(uint16_t crc,const uint8_t *data,unsigned len) {
+ while(len--) {crc^=(uint16_t)*data++<<8;
+  for(unsigned j=0;j<8;j++)crc=(uint16_t)((crc<<1)^((crc&0x8000)?0x1021:0));
+ }return crc;
+}
+int main(void) {
+ uint8_t payload[1200];
+ for(unsigned i=0;i<256;i++) {uint8_t b=(uint8_t)i;
+  assert(s_crc16_table[i]==reference(0,&b,1));
+ }
+ assert(rpc_crc16((const uint8_t*)"123456789",9)==0x29B1);
+ for(unsigned seq=0;seq<256;seq++) {
+  uint8_t ping[]={1,(uint8_t)seq,0,0};
+  uint8_t pong[]={2,(uint8_t)seq,0,0};
+  assert(rpc_crc16(ping,4)==reference(0xFFFF,ping,4));
+  assert(rpc_crc16(pong,4)==reference(0xFFFF,pong,4));
+ }
+ for(unsigned i=0;i<sizeof(payload);i++)payload[i]=(uint8_t)(i*37);
+ for(unsigned cut=0;cut<=sizeof(payload);cut++)
+  assert(rpc_crc16_continue(rpc_crc16(payload,(uint16_t)cut),payload+cut,(uint16_t)(sizeof(payload)-cut))==reference(0xFFFF,payload,sizeof(payload)));
+ puts("PASS: firmware USB CRC matches CCITT reference for all table entries, ping/pong sequences and split payloads");
+ return 0;
+}
+"""
+(out/'rpc-crc.c').write_text(rpc_crc_test)
+exe=compile('rpc-crc',[out/'rpc-crc.c']);print(run([exe]))
+
+tx_test=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#define RPC_USB_TX_RETRIES 3
+#define RPC_USB_TX_RETRY_MS 2
+#define USBD_OK 0
+static int m1_USB_CDC_ready,attempts,busy;
+static uint32_t ticks;
+static uint32_t HAL_GetTick(void){return ticks;}
+static void osDelay(unsigned n){ticks+=n;}
+static int CDC_Transmit_FS(uint8_t *data,uint16_t len){assert(data && len==1);++attempts;return busy;}
+static int CDC_TransmitPending_FS(void){return ticks<5;}
+"""+function_body(rpc_source,'static void rpc_usb_transmit(const uint8_t *data, uint16_t len)')+r"""
+int main(void) {
+ uint8_t b=0;m1_USB_CDC_ready=-1;rpc_usb_transmit(&b,1);assert(attempts==0);
+ m1_USB_CDC_ready=0;rpc_usb_transmit(&b,1);assert(attempts==1 && ticks>=5);
+ busy=1;attempts=0;rpc_usb_transmit(&b,1);assert(attempts==3);
+ puts("PASS: USB reply holds frame storage through asynchronous completion and bounds retries");return 0;
+}
+"""
+(out/'rpc-tx.c').write_text(tx_test)
+exe=compile('rpc-tx',[out/'rpc-tx.c']);print(run([exe]))
+
+radio_test=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#define RPC_MAX_PAYLOAD 1200
+#define RPC_ERR_INVALID_PAYLOAD 2
+#define RPC_ERR_BUSY 3
+#define RPC_CMD_RADIO_CHECK_RESP 0x66
+#define M1_OPERATION_MODE_SUB_FUNC_RUNNING 9
+typedef struct {uint8_t cmd,seq;uint16_t len;uint8_t payload[1200];} S_RPC_Frame;
+static struct {int op_mode;} m1_device_stat;
+static int nack,init,main_init,sends,replies;
+static const char *expected;
+static void m1_rpc_send_nack(uint8_t seq,uint8_t error){assert(seq==7);nack=error;}
+static int m1_esp32_get_init_status(void){return init;}
+static void m1_esp32_init(void){init=1;}
+static int get_esp32_main_init_status(void){return main_init;}
+static void esp32_main_init(void){main_init=1;}
+static uint8_t spi_AT_send_recv(const char *cmd,char *out,int size,int timeout) {
+ assert(strcmp(cmd,expected)==0 && size==1199 && timeout==10);++sends;
+ strcpy(out,"+M1RADAR:1,2,48,53\r\nOK\r\n");return 0;
+}
+static void m1_rpc_send_frame(uint8_t cmd,uint8_t seq,const uint8_t *buf,uint16_t len) {
+ assert(cmd==0x66 && seq==7 && buf[0]==0);
+ assert(len==1+strlen((const char*)buf+1));
+ assert(strstr((const char*)buf+1,"+M1RADAR:1,2,48,53"));++replies;
+}
+"""+function_body(rpc_source,'static void rpc_handle_radio_check(const S_RPC_Frame *f)')+r"""
+int main(void) {
+ S_RPC_Frame frame={0};frame.seq=7;
+ rpc_handle_radio_check(&frame);assert(nack==2 && sends==0);
+ frame.len=1;frame.payload[0]=7;rpc_handle_radio_check(&frame);assert(nack==2 && sends==0);
+ frame.payload[0]=3;m1_device_stat.op_mode=9;rpc_handle_radio_check(&frame);assert(nack==3 && sends==0);
+ m1_device_stat.op_mode=0;expected="AT+M1RADAR?\r\n";
+ rpc_handle_radio_check(&frame);assert(init && main_init && sends==1 && replies==1);
+ puts("PASS: direct USB radio diagnostics reject invalid/busy requests and preserve complete results");return 0;
+}
+"""
+(out/'rpc-radio.c').write_text(radio_test)
+exe=compile('rpc-radio',[out/'rpc-radio.c']);print(run([exe]))
+
 usb_source=(repo/'USB/Class/CDC/Src/usbd_cdc_if.c').read_text(encoding='utf-8')
 usb_test=r"""
 #include <assert.h>

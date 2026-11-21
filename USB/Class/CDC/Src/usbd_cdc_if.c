@@ -427,3 +427,14 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
   * @}
   */
 
+
+/* Query the CDC instance without relying on the composite dispatch cursor. */
+uint8_t CDC_TransmitPending_FS(void)
+{
+#if M1_USB_MODE == M1_CFG_USB_CDC_MSC
+  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassDataCmsit[CDC_InstID];
+#else
+  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+#endif
+  return hcdc != NULL && hcdc->TxState != 0;
+}

@@ -35,6 +35,7 @@ extern USBD_CDC_ItfTypeDef  USBD_CDC_Interface_fops;
 /* Exported macro ------------------------------------------------------------*/
 /* Exported functions ------------------------------------------------------- */
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len);
+uint8_t CDC_TransmitPending_FS(void);
 
 #ifdef __cplusplus
 }

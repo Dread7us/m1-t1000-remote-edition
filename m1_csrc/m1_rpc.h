@@ -89,6 +89,8 @@
 #define RPC_CMD_CLI_RESP        0x61
 #define RPC_CMD_ESP_UART_SNOOP  0x62
 #define RPC_CMD_ESP_UART_SNOOP_RESP 0x63
+#define RPC_CMD_RADIO_CHECK     0x65
+#define RPC_CMD_RADIO_CHECK_RESP 0x66
 #define RPC_CMD_DEBUG_LOG       0x64    /* Unsolicited debug log text from firmware */
 
 /* ── Button IDs (match m1_system.h) ── */

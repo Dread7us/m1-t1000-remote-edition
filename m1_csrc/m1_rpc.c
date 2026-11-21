@@ -47,6 +47,7 @@
 #include "FreeRTOS_CLI.h"
 #include "m1_power_ctl.h"
 #include "m1_sys_init.h"
+#include "esp_app_main.h"
 
 /*************************** D E F I N E S ************************************/
 
@@ -149,10 +150,10 @@ static const uint16_t s_crc16_table[256] = {
     0xA56A, 0xB54B, 0x8528, 0x9509, 0xE5EE, 0xF5CF, 0xC5AC, 0xD58D,
     0x3653, 0x2672, 0x1611, 0x0630, 0x76D7, 0x66F6, 0x5695, 0x46B4,
     0xB75B, 0xA77A, 0x9719, 0x8738, 0xF7DF, 0xE7FE, 0xD79D, 0xC7BC,
-    0x4864, 0x5845, 0x6826, 0x7807, 0x08E0, 0x18C1, 0x28A2, 0x38C3,
-    0xC92C, 0xD90D, 0xE96E, 0xF94F, 0x89A8, 0x9989, 0xA9EA, 0xB9CB,
-    0x5A15, 0x4A34, 0x7A57, 0x6A76, 0x1A91, 0x0AB0, 0x3AD3, 0x2AF2,
-    0xDB1D, 0xCB3C, 0xFB5F, 0xEB7E, 0x9B99, 0x8BB8, 0xBBDB, 0xABFA,
+    0x48C4, 0x58E5, 0x6886, 0x78A7, 0x0840, 0x1861, 0x2802, 0x3823,
+    0xC9CC, 0xD9ED, 0xE98E, 0xF9AF, 0x8948, 0x9969, 0xA90A, 0xB92B,
+    0x5AF5, 0x4AD4, 0x7AB7, 0x6A96, 0x1A71, 0x0A50, 0x3A33, 0x2A12,
+    0xDBFD, 0xCBDC, 0xFBBF, 0xEB9E, 0x9B79, 0x8B58, 0xBB3B, 0xAB1A,
     0x6CA6, 0x7C87, 0x4CE4, 0x5CC5, 0x2C22, 0x3C03, 0x0C60, 0x1C41,
     0xEDAE, 0xFD8F, 0xCDEC, 0xDDCD, 0xAD2A, 0xBD0B, 0x8D68, 0x9D49,
     0x7E97, 0x6EB6, 0x5ED5, 0x4EF4, 0x3E13, 0x2E32, 0x1E51, 0x0E70,
@@ -167,9 +168,9 @@ static const uint16_t s_crc16_table[256] = {
     0x26D3, 0x36F2, 0x0691, 0x16B0, 0x6657, 0x7676, 0x4615, 0x5634,
     0xD94C, 0xC96D, 0xF90E, 0xE92F, 0x99C8, 0x89E9, 0xB98A, 0xA9AB,
     0x5844, 0x4865, 0x7806, 0x6827, 0x18C0, 0x08E1, 0x3882, 0x28A3,
-    0xCB7D, 0xDB5C, 0xEB3F, 0xFB1E, 0x8BF9, 0x9BD8, 0xABBB, 0xBBBA,
-    0x4A55, 0x5A74, 0x6A17, 0x7A36, 0x0AD1, 0x1AF0, 0x2A93, 0x3AB2,
-    0xFD0E, 0xED2F, 0xDD4C, 0xCD6D, 0xBD8A, 0xAD8B, 0x9DE8, 0x8DC9,
+    0xCB7D, 0xDB5C, 0xEB3F, 0xFB1E, 0x8BF9, 0x9BD8, 0xABBB, 0xBB9A,
+    0x4A75, 0x5A54, 0x6A37, 0x7A16, 0x0AF1, 0x1AD0, 0x2AB3, 0x3A92,
+    0xFD2E, 0xED0F, 0xDD6C, 0xCD4D, 0xBDAA, 0xAD8B, 0x9DE8, 0x8DC9,
     0x7C26, 0x6C07, 0x5C64, 0x4C45, 0x3CA2, 0x2C83, 0x1CE0, 0x0CC1,
     0xEF1F, 0xFF3E, 0xCF5D, 0xDF7C, 0xAF9B, 0xBFBA, 0x8FD9, 0x9FF8,
     0x6E17, 0x7E36, 0x4E55, 0x5E74, 0x2E93, 0x3EB2, 0x0ED1, 0x1EF0
@@ -220,6 +221,7 @@ static void rpc_handle_esp_update_start(const S_RPC_Frame *f);
 static void rpc_handle_esp_update_data(const S_RPC_Frame *f);
 static void rpc_handle_esp_update_finish(const S_RPC_Frame *f);
 static void rpc_handle_cli_exec(const S_RPC_Frame *f);
+static void rpc_handle_radio_check(const S_RPC_Frame *f);
 static void rpc_handle_esp_uart_snoop(const S_RPC_Frame *f);
 
 /* Screen streaming helpers */
@@ -277,24 +279,20 @@ static uint16_t rpc_crc16_continue(uint16_t crc, const uint8_t *data, uint16_t l
  */
 static void rpc_usb_transmit(const uint8_t *data, uint16_t len)
 {
-    if (m1_USB_CDC_ready != 0)
-    {
-        M1_LOG_I(M1_LOGDB_TAG, "TX blocked: CDC_ready=%d\r\n", m1_USB_CDC_ready);
-        return;
-    }
-
+    if (m1_USB_CDC_ready != 0) return;
+    /* Logging here would feed the RPC debug transport recursively. */
     for (int retry = 0; retry < RPC_USB_TX_RETRIES; retry++)
     {
-        uint8_t result = CDC_Transmit_FS((uint8_t *)data, len);
-        if (result == USBD_OK)
+        if (CDC_Transmit_FS((uint8_t *)data, len) == USBD_OK)
         {
-            M1_LOG_I(M1_LOGDB_TAG, "TX OK %u bytes cmd=0x%02X\r\n", len, data[1]);
+            /* The asynchronous driver retains this frame pointer. */
+            uint32_t started = HAL_GetTick();
+            while (CDC_TransmitPending_FS() && HAL_GetTick() - started < 1000U)
+                osDelay(1);
             return;
         }
-        M1_LOG_I(M1_LOGDB_TAG, "TX retry %d result=%d\r\n", retry, result);
         osDelay(RPC_USB_TX_RETRY_MS);
     }
-    M1_LOG_I(M1_LOGDB_TAG, "TX FAILED after %d retries\r\n", RPC_USB_TX_RETRIES);
 }
 
 
@@ -619,6 +617,7 @@ static void rpc_dispatch_frame(const S_RPC_Frame *frame)
     /* Debug / CLI — deferred to rpc_task (16KB stack).
      * mtest subcommands may trigger SD/I2C/SPI operations that
      * overflow the 8KB Usb2SerTask stack. */
+    case RPC_CMD_RADIO_CHECK:
     case RPC_CMD_CLI_EXEC:
         if (s_deferred_pending)
         {
@@ -2224,6 +2223,31 @@ static void rpc_handle_esp_update_finish(const S_RPC_Frame *f)
  * Payload: null-terminated command string (e.g., "mtest esp32 0")
  * Response: CLI_RESP with the output text.
  */
+/* Bounded diagnostic commands return the radio reply directly, without the
+ * CLI debug capture that can crowd out measurement results. */
+static void rpc_handle_radio_check(const S_RPC_Frame *f)
+{
+    static const char *commands[] = {
+        "AT\r\n", "AT+CWLAP\r\n", "AT+CWJAP?\r\n", "AT+M1RADAR?\r\n",
+        "AT+M1RADAR=1\r\n", "AT+M1RADAR=2\r\n", "AT+M1RADAR=0\r\n"
+    };
+    static uint8_t result[RPC_MAX_PAYLOAD];
+    if (f->len != 1 || f->payload[0] >= sizeof(commands)/sizeof(commands[0])) {
+        m1_rpc_send_nack(f->seq, RPC_ERR_INVALID_PAYLOAD);
+        return;
+    }
+    if (m1_device_stat.op_mode == M1_OPERATION_MODE_SUB_FUNC_RUNNING) {
+        m1_rpc_send_nack(f->seq, RPC_ERR_BUSY);
+        return;
+    }
+    if (!m1_esp32_get_init_status()) m1_esp32_init();
+    if (!get_esp32_main_init_status()) esp32_main_init();
+    memset(result, 0, sizeof(result));
+    result[0] = spi_AT_send_recv(commands[f->payload[0]], (char *)&result[1], sizeof(result)-1, 10);
+    m1_rpc_send_frame(RPC_CMD_RADIO_CHECK_RESP, f->seq, result,
+                     (uint16_t)(1U + strlen((char *)&result[1])));
+}
+
 static void rpc_handle_cli_exec(const S_RPC_Frame *f)
 {
     static char cmd_buf[160];   /* room for full paths (e.g. espnow send <mac> <path>) */
@@ -2385,6 +2409,7 @@ void m1_rpc_task(void *param)
             case RPC_CMD_SD_UNMOUNT:        rpc_handle_sd_unmount(&frame);        break;
             case RPC_CMD_SD_MOUNT:          rpc_handle_sd_mount(&frame);          break;
             case RPC_CMD_CLI_EXEC:          rpc_handle_cli_exec(&frame);          break;
+            case RPC_CMD_RADIO_CHECK:       rpc_handle_radio_check(&frame);       break;
             case RPC_CMD_ESP_UPDATE_START:  rpc_handle_esp_update_start(&frame);  break;
             case RPC_CMD_ESP_UPDATE_FINISH: rpc_handle_esp_update_finish(&frame); break;
             default: break;

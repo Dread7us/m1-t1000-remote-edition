@@ -88,6 +88,8 @@ SemaphoreHandle_t usb2ser_task_semaphore;
 SemaphoreHandle_t usb2ser_tx_semaphore;
 
 uint8_t usb_tx_temp_buffer[USB_TX_BUF_SIZE];
+/* USB input must never alias the debug output ring, including during RPC logs. */
+static uint8_t usb_rx_task_buffer[M1_LOGDB_TX_BUFFER_SIZE];
 
 volatile uint16_t head_usart1_dma = 0;
 volatile uint16_t tail_usart1_dma = 0;
@@ -393,7 +395,7 @@ void vUsb2SerTask(void *pvParameters)
     }
 #endif
     received_bytes = xStreamBufferReceive(h_usb_rx_streambuf,
-                                          (void *)logdb_tx_buffer,
+                                          (void *)usb_rx_task_buffer,
                                           M1_LOGDB_TX_BUFFER_SIZE, 0);
 
     if (DEBUG_received_bytes < received_bytes) DEBUG_received_bytes = received_bytes;
@@ -409,9 +411,9 @@ void vUsb2SerTask(void *pvParameters)
        * RPC parser (frames may span multiple stream buffer reads).
        * Before RPC is active, detect the first sync byte to enter
        * RPC mode. */
-      if (m1_usbcdc_mode != CDC_MODE_UART_BRIDGE && (m1_rpc_active || m1_rpc_is_sync(logdb_tx_buffer, received_bytes)))
+      if (m1_usbcdc_mode != CDC_MODE_UART_BRIDGE && (m1_rpc_active || m1_rpc_is_sync(usb_rx_task_buffer, received_bytes)))
       {
-        m1_rpc_feed(logdb_tx_buffer, received_bytes);
+        m1_rpc_feed(usb_rx_task_buffer, received_bytes);
 
         /* Re-arm USB endpoint if paused */
         if (usbcdc_rx_paused == 1)
@@ -427,7 +429,7 @@ void vUsb2SerTask(void *pvParameters)
 #endif /* M1_APP_RPC_ENABLE */
 
       bytes_remaining = received_bytes;
-      current_buffer_ptr = logdb_tx_buffer;
+      current_buffer_ptr = usb_rx_task_buffer;
 
       while(bytes_remaining > 0)
       {

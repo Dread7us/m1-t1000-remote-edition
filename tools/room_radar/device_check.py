@@ -54,10 +54,12 @@ class RoomScope:
         return self.request(0x60, command.encode() + b"\0", 0x61, 35).decode("utf-8", "replace")
 
     def at(self, command):
-        output = self.cli("mtest 72 " + command)
-        if "SPI_AT>" not in output:
-            raise RuntimeError("Radio command failed: " + output[-180:])
-        return output.split("SPI_AT>", 1)[1]
+        commands = ("AT", "AT+CWLAP", "AT+CWJAP?", "AT+M1RADAR?",
+                    "AT+M1RADAR=1", "AT+M1RADAR=2", "AT+M1RADAR=0")
+        response = self.request(0x65, bytes([commands.index(command)]), 0x66, 35)
+        if not response or response[0] != 0:
+            raise RuntimeError("Radio command failed: " + repr(response))
+        return response[1:].decode("utf-8", "replace")
 
     def radar(self):
         output = self.at("AT+M1RADAR?")
@@ -109,7 +111,6 @@ def main():
         device.request(1, expected=2)
         device.request(3, expected=4)
         report["usb_control"] = "passed"
-        device.cli("mtest 70 0")
         if not re.search(r"(?:^|[\r\n])OK(?:[\r\n]|$)", device.at("AT")):
             raise RuntimeError("Radio readiness check failed")
         report["wifi_scan"] = device.at("AT+CWLAP")

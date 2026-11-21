@@ -55,6 +55,24 @@ class USBTests(unittest.TestCase):
         body = device.port.writes[0][1:-2]
         self.assertEqual(binascii.crc_hqx(body, 65535), struct.unpack("<H", device.port.writes[0][-2:])[0])
 
+    def test_direct_radio_reply_preserves_records(self):
+        device = object.__new__(client.RoomScope)
+        calls = []
+        def request(*args):
+            calls.append(args)
+            return b"\0AT+M1RADAR?\r\n+M1RADAR:1,2,48,53\r\nOK\r\n"
+        device.request = request
+        self.assertEqual(device.radar(), {"state": 2, "samples": 48, "score": 53})
+        self.assertEqual(calls, [(0x65, b"\x03", 0x66, 35)])
+
+    def test_direct_radio_rejects_error_and_unknown_command(self):
+        device = object.__new__(client.RoomScope)
+        device.request = lambda *args: b"\x01TIMEOUT"
+        with self.assertRaises(RuntimeError):
+            device.at("AT")
+        with self.assertRaises(ValueError):
+            device.at("AT+RESTORE")
+
     def test_timeout_is_explicit(self):
         device = client.RoomScope("fake")
         with self.assertRaises(TimeoutError):
