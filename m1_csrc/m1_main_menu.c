@@ -19,6 +19,7 @@
 #include "m1_display.h"
 #include "m1_menu.h"
 #include "m1_room_radar.h"
+#include "m1_room_watch.h"
 #include "m1_device_library.h"
 #include "m1_settings.h"
 #include "m1_system.h"
@@ -150,6 +151,7 @@ static S_M1_Menu_t menu_Tools =
      &menu_Storage, &menu_Power}
 };
 
+static S_M1_Menu_t menu_Room_Watch = {.title = "Room Watch", .sub_func = room_watch_open};
 static S_M1_Menu_t menu_Signal_Map = {.title = "Wi-Fi Signal Map", .sub_func = room_radar_open_map};
 static S_M1_Menu_t menu_Room_Motion = {.title = "Room Motion", .sub_func = room_radar_open_motion};
 static S_M1_Menu_t menu_LAN_Devices = {.title = "LAN Devices", .sub_func = room_radar_open_lan};
@@ -157,6 +159,7 @@ static S_M1_Menu_t menu_LAN_Devices = {.title = "LAN Devices", .sub_func = room_
 static void roomscope_home_draw(const S_M1_Menu_t *menu, uint8_t selected)
 {
     static const uint8_t icons[][8] = {
+        {0x18,0x3c,0x7e,0xdb,0xdb,0x7e,0x3c,0x18},
         {0x00, 0x3c, 0x42, 0x18, 0x24, 0x00, 0x18, 0x00},
         {0x18, 0x24, 0x42, 0x99, 0x99, 0x42, 0x24, 0x18},
         {0x18, 0x18, 0x18, 0x7e, 0x42, 0x42, 0x66, 0x66},
@@ -183,9 +186,9 @@ static void roomscope_home_draw(const S_M1_Menu_t *menu, uint8_t selected)
 
 S_M1_Menu_t menu_Main = {
     .title = "Room Radar",
-    .num_submenu_items = 7,
+    .num_submenu_items = 8,
     .gui_menu_update = roomscope_home_draw,
-    .submenu = {&menu_Signal_Map, &menu_Room_Motion, &menu_LAN_Devices, &menu_Infrared,
+    .submenu = {&menu_Room_Watch, &menu_Signal_Map, &menu_Room_Motion, &menu_LAN_Devices, &menu_Infrared,
                 &menu_Test_Devices, &menu_Settings, &menu_Tools}
 };
 

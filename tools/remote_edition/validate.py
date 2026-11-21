@@ -1461,6 +1461,96 @@ exe=compile('usb-routing',[out/'usb-routing.c']);print(run([exe]))
 (out/'usb-routing-single.c').write_text('#define M1_USB_MODE 2\n'+usb_test)
 exe=compile('usb-routing-single',[out/'usb-routing-single.c']);print(run([exe]))
 
+watch_source=(src/'m1_room_radar.c').read_text()
+watch_test=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_room_watch.h"
+int main(void) {
+ room_watch_snapshot_t a={0},b={0},sentinel={0};uint8_t bytes[70],bad[70];
+ assert(room_watch_connected("+CWJAP:\"Home\",\"aa:bb:cc:dd:ee:ff\",10,-42\r\nOK\r\n",&a));
+ a.networks=20;a.peers=26;a.uptime=123456;
+ assert(room_watch_encode(&a,bytes) && room_watch_decode(bytes,70,&b));
+ assert(!strcmp(b.network,a.network) && b.rssi==-42 && b.peers==26 && b.uptime==123456);
+ for(unsigned i=0;i<70;i++){memcpy(bad,bytes,70);bad[i]^=1;b=sentinel;assert(!room_watch_decode(bad,70,&b) && b.peers==0);}
+ assert(!room_watch_decode(bytes,69,&b));
+ b=a;strcpy(b.bssid,"AA:BB:CC:DD:EE:FF");assert(room_watch_same_network(&a,&b));
+ b.bssid[0]='1';assert(!room_watch_same_network(&a,&b));
+ a.peers=254;assert(!room_watch_encode(&a,bytes));
+ puts("PASS: Room Watch codec detects corruption, validates ranges and guards router identity");return 0;
+}
+"""
+(out/'room-watch-model.c').write_text(watch_test)
+exe=compile('room-watch-model',[out/'room-watch-model.c']);print(run([exe]))
+watch_store=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "ff.h"
+#include "m1_room_watch.h"
+#define WATCH_PATH "0:/System/room-watch.dat"
+static bool watch_recovered;
+static int fail_write,fail_replace,fail_sync,fail_close;
+static unsigned f_size(FIL *f){long p=ftell(f->fp);fseek(f->fp,0,SEEK_END);long n=ftell(f->fp);fseek(f->fp,p,SEEK_SET);return (unsigned)n;}
+static FRESULT f_write(FIL *f,const void *b,UINT n,UINT *written){*written=fail_write?0:(UINT)fwrite(b,1,n,f->fp);return fail_write?FR_DISK_ERR:FR_OK;}
+static FRESULT f_sync(FIL *f){return fail_sync || fflush(f->fp)?FR_DISK_ERR:FR_OK;}
+static FRESULT f_mkdir(const char *p){(void)p;return FR_OK;}
+static FRESULT test_close(FIL *f){FRESULT r=f_close(f);return fail_close?FR_DISK_ERR:r;}
+static FRESULT test_rename(const char *a,const char *b){return fail_replace && strstr(a,".tmp")?FR_DISK_ERR:f_rename(a,b);}
+#define f_close test_close
+#define f_rename test_rename
+"""
+for signature in ['static bool watch_load_file(const char *path,room_watch_snapshot_t *snapshot)',
+                  'static bool watch_load(room_watch_snapshot_t *snapshot)',
+                  'static bool watch_save(const room_watch_snapshot_t *snapshot)']:
+ watch_store+='\n'+function_body(watch_source,signature)
+watch_store+=r"""
+int main(void) {
+ room_watch_snapshot_t a={0},b={0};strcpy(a.network,"Home");strcpy(a.bssid,"aa:bb:cc:dd:ee:ff");a.rssi=-40;a.channel=10;a.peers=26;
+ remove("System/room-watch.dat");remove("System/room-watch.dat.bak");remove("System/room-watch.dat.tmp");
+ assert(watch_save(&a) && watch_load(&b) && b.peers==26);
+ a.peers=30;fail_write=1;assert(!watch_save(&a));fail_write=0;assert(watch_load(&b) && b.peers==26);
+ fail_sync=1;assert(!watch_save(&a));fail_sync=0;assert(watch_load(&b) && b.peers==26);
+ fail_close=1;assert(!watch_save(&a));fail_close=0;assert(watch_load(&b) && b.peers==26);
+ fail_replace=1;assert(!watch_save(&a));fail_replace=0;assert(watch_load(&b) && b.peers==26);
+ assert(watch_save(&a));FILE *f=fopen("System/room-watch.dat","wb");assert(f);fputs("bad",f);fclose(f);
+ assert(watch_load(&b) && watch_recovered && b.peers==26);
+ fail_replace=1;assert(!watch_save(&a));fail_replace=0;assert(watch_load(&b) && b.peers==26);
+ assert(watch_save(&a) && watch_load(&b) && b.peers==30);
+ puts("PASS: Room Watch baselines survive short writes, sync/close errors, failed replacement and corrupt primary");return 0;
+}
+"""
+(out/'room-watch-storage.c').write_text(watch_store)
+exe=compile('room-watch-storage',[out/'room-watch-storage.c',shim/'ff_shim.c']);print(run([exe]))
+
+watch_capture_test=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_room_watch.h"
+#include "m1_room_radar.h"
+#define BUTTON_BACK_KP_ID 5
+static char reply[512];static unsigned at_calls;static int fail_scan,fail_job,switched,cancel;
+static unsigned HAL_GetTick(void){return 1234;}
+static void radar_panel(const char *t,const char *a,const char *b,const char *c,const char *d){(void)t;(void)a;(void)b;(void)c;(void)d;}
+static bool radar_at(const char *cmd){assert(!strcmp(cmd,"AT+CWJAP?\r\n"));++at_calls;
+ strcpy(reply,at_calls>1 && switched?"+CWJAP:\"Other\",\"11:22:33:44:55:66\",1,-50\r\nOK\r\n":"+CWJAP:\"Home\",\"aa:bb:cc:dd:ee:ff\",10,-40\r\nOK\r\n");return true;}
+bool wifi_room_radar_scan(room_radar_reading_t *scan){scan->networks=20;return !fail_scan;}
+static int radar_key(unsigned wait){(void)wait;return cancel?BUTTON_BACK_KP_ID:-1;}
+static bool radar_job(unsigned op,room_radar_result_t *r,bool *cancelled){assert(op==2);*cancelled=false;r->value=26;return !fail_job;}
+"""+function_body(watch_source,'static bool watch_capture(room_watch_snapshot_t *snapshot,bool *cancelled)')+r"""
+int main(void){room_watch_snapshot_t row={0};bool cancelled=false;row.peers=99;
+ fail_scan=1;assert(!watch_capture(&row,&cancelled) && row.peers==99);fail_scan=0;at_calls=0;
+ fail_job=1;assert(!watch_capture(&row,&cancelled) && row.peers==99);fail_job=0;at_calls=0;
+ switched=1;assert(!watch_capture(&row,&cancelled) && row.peers==99);switched=0;at_calls=0;
+ cancel=1;assert(!watch_capture(&row,&cancelled) && cancelled && row.peers==99);cancel=0;at_calls=0;
+ assert(watch_capture(&row,&cancelled) && !cancelled && row.peers==26 && row.networks==20 && row.uptime==1234);
+ puts("PASS: Room Watch never publishes partial, cancelled or cross-network snapshots");return 0;}
+"""
+(out/'room-watch-capture.c').write_text(watch_capture_test)
+exe=compile('room-watch-capture',[out/'room-watch-capture.c']);print(run([exe]))
+
 print(run([sys.executable, repo/'tools/room_radar/test_device_check.py']))
 print(run([sys.executable, repo/'tools/room_radar/test_motion_trial.py']))
 

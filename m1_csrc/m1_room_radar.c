@@ -3,6 +3,7 @@
 #include "app_freertos.h"
 #include "m1_display.h"
 #include "m1_room_radar.h"
+#include "m1_room_watch.h"
 #include "m1_virtual_kb.h"
 #include "esp_app_main.h"
 #include "ff.h"
@@ -575,6 +576,152 @@ void room_radar_run(void)
         } else if (radar_radio_ready(home[selected])) {
             if (selected == 0) radar_map();
             else radar_measure(1);
+        }
+    }
+}
+
+/* Room Watch compares explicit snapshots, never inferred people or identities. */
+#define WATCH_PATH "0:/System/room-watch.dat"
+static bool watch_recovered;
+static bool watch_load_file(const char *path,room_watch_snapshot_t *snapshot)
+{
+    FIL file;UINT count;uint8_t bytes[ROOM_WATCH_WIRE_SIZE];
+    if(f_open(&file,path,FA_READ)!=FR_OK)return false;
+    bool ok=f_size(&file)==sizeof(bytes) && f_read(&file,bytes,sizeof(bytes),&count)==FR_OK &&
+            count==sizeof(bytes) && room_watch_decode(bytes,sizeof(bytes),snapshot);
+    if(f_close(&file)!=FR_OK)ok=false;
+    return ok;
+}
+static bool watch_load(room_watch_snapshot_t *snapshot)
+{
+    watch_recovered=false;
+    if(watch_load_file(WATCH_PATH,snapshot))return true;
+    if(watch_load_file(WATCH_PATH ".bak",snapshot)){watch_recovered=true;return true;}
+    return false;
+}
+static bool watch_save(const room_watch_snapshot_t *snapshot)
+{
+    uint8_t bytes[ROOM_WATCH_WIRE_SIZE];FIL file;UINT count;FILINFO info;
+    if(!room_watch_encode(snapshot,bytes))return false;
+    f_mkdir("0:/System");
+    if(f_open(&file,WATCH_PATH ".tmp",FA_WRITE|FA_CREATE_ALWAYS)!=FR_OK)return false;
+    bool ok=f_write(&file,bytes,sizeof(bytes),&count)==FR_OK && count==sizeof(bytes) && f_sync(&file)==FR_OK;
+    if(f_close(&file)!=FR_OK)ok=false;
+    if(!ok)return false;
+    bool prior=f_stat(WATCH_PATH,&info)==FR_OK;
+    if(prior && watch_recovered){if(f_unlink(WATCH_PATH)!=FR_OK)return false;prior=false;}
+    if(prior){
+        FRESULT removed=f_unlink(WATCH_PATH ".bak");
+        if(removed!=FR_OK && removed!=FR_NO_FILE)return false;
+        if(f_rename(WATCH_PATH,WATCH_PATH ".bak")!=FR_OK)return false;
+    }
+    if(f_rename(WATCH_PATH ".tmp",WATCH_PATH)!=FR_OK){
+        if(prior)f_rename(WATCH_PATH ".bak",WATCH_PATH);
+        return false;
+    }
+    watch_recovered=false;return true;
+}
+static bool watch_capture(room_watch_snapshot_t *snapshot,bool *cancelled)
+{
+    room_watch_snapshot_t row={0},after={0};room_radar_reading_t scan={0};
+    room_radar_result_t peers={0};*cancelled=false;
+    radar_panel("Room Watch","1/3 Checking Wi-Fi","Please wait...",NULL,NULL);
+    if(!radar_at("AT+CWJAP?\r\n") || !room_watch_connected(reply,&row))return false;
+    radar_panel("Room Watch","2/3 Nearby networks","Scanning 2.4 GHz",NULL,NULL);
+    if(!wifi_room_radar_scan(&scan))return false;
+    row.networks=scan.networks;
+    if(radar_key(0)==BUTTON_BACK_KP_ID){*cancelled=true;return false;}
+    radar_panel("Room Watch","3/3 Local devices","Checking responses",NULL,NULL);
+    if(!radar_job(2,&peers,cancelled))return false;
+    if(!radar_at("AT+CWJAP?\r\n") || !room_watch_connected(reply,&after) ||
+       !room_watch_same_network(&row,&after))return false;
+    row.peers=peers.value;row.rssi=after.rssi;row.channel=after.channel;row.uptime=HAL_GetTick();
+    if(!room_watch_valid(&row))return false;
+    *snapshot=row;return true;
+}
+static bool watch_log(const room_watch_snapshot_t *row)
+{
+    FIL file;UINT written;char line[100];
+    int length=snprintf(line,sizeof(line),"%lu,%u,%u,%d,%u\r\n",(unsigned long)row->uptime,
+                        row->networks,row->peers,row->rssi,row->channel);
+    f_mkdir("0:/System");
+    if(length<0 || (unsigned)length>=sizeof(line) ||
+       f_open(&file,"0:/System/room-watch.csv",FA_WRITE|FA_OPEN_APPEND)!=FR_OK)return false;
+    bool ok=f_write(&file,line,(UINT)length,&written)==FR_OK && written==(UINT)length && f_sync(&file)==FR_OK;
+    if(f_close(&file)!=FR_OK)ok=false;return ok;
+}
+static void watch_draw(const room_watch_snapshot_t *row,const room_watch_snapshot_t *base,
+                       bool have_row,bool have_base,unsigned page,unsigned action)
+{
+    static const uint8_t icon[]={0x18,0x3c,0x7e,0xdb,0xdb,0x7e,0x3c,0x18};
+    char a[40],b[40],c[40];const char *foot="Check";
+    char position[8];snprintf(position,sizeof(position),"%u/3 >",page+1);
+    m1_u8g2_firstpage();m1_draw_header_bar(&m1_u8g2,"Room Watch",position);
+    u8g2_SetFont(&m1_u8g2,M1_DISP_FUNC_MENU_FONT_N);
+    if(page==0){
+        u8g2_DrawXBMP(&m1_u8g2,5,17,8,8,icon);
+        if(have_row)m1_draw_marquee(&m1_u8g2,18,24,104,row->network);
+        else m1_draw_text(&m1_u8g2,18,24,104,"Your room snapshot",TEXT_ALIGN_LEFT);
+        if(have_row){snprintf(a,sizeof(a),"Wi-Fi %u    LAN %u",row->networks,row->peers);
+            snprintf(b,sizeof(b),"%d dBm   Channel %u",row->rssi,row->channel);}
+        else{strcpy(a,"Wi-Fi + local responses");strcpy(b,"OK starts a room check");}
+        m1_draw_text(&m1_u8g2,5,36,118,a,TEXT_ALIGN_LEFT);
+        m1_draw_text(&m1_u8g2,5,47,118,b,TEXT_ALIGN_LEFT);
+    }else if(page==1){
+        bool comparable=have_row && have_base && room_watch_same_network(row,base);
+        if(comparable){
+            snprintf(a,sizeof(a),"Networks %+d",(int)row->networks-(int)base->networks);
+            snprintf(b,sizeof(b),"Responders %+d",(int)row->peers-(int)base->peers);
+            snprintf(c,sizeof(c),"Signal %+d dB",row->rssi-base->rssi);
+        }else{strcpy(a,!have_base?"No saved baseline":!have_row?"Run a room check first":"Different Wi-Fi router");
+            strcpy(b,"Compare only same Wi-Fi");strcpy(c,"Right: baseline options");}
+        m1_draw_text(&m1_u8g2,5,24,118,a,TEXT_ALIGN_LEFT);
+        m1_draw_text(&m1_u8g2,5,36,118,b,TEXT_ALIGN_LEFT);
+        m1_draw_text(&m1_u8g2,5,47,118,c,TEXT_ALIGN_LEFT);
+    }else{
+        const char *items[]={"Check room again","Save current baseline","What do results mean?"};foot="Choose";
+        for(unsigned i=0;i<3;i++){int y=14+(int)i*12;m1_ui_selection(&m1_u8g2,2,y,124,11,i==action);
+            m1_draw_text(&m1_u8g2,5,y+8,118,items[i],TEXT_ALIGN_LEFT);}
+    }
+    m1_draw_bottom_bar(&m1_u8g2,button_back_8x8,"Back",foot,button_ok_8x8);
+    m1_u8g2_nextpage();
+}
+void room_watch_open(void)
+{
+    room_watch_snapshot_t row={0},base={0};bool have_row=false,have_base=watch_load(&base);
+    unsigned page=0,action=0;
+    for(;;){
+        watch_draw(&row,&base,have_row,have_base,page,action);
+        int key=radar_key(pdMS_TO_TICKS(100));
+        if(key==BUTTON_BACK_KP_ID)return;
+        if(key==BUTTON_LEFT_KP_ID){page=(page+2)%3;continue;}
+        if(key==BUTTON_RIGHT_KP_ID){page=(page+1)%3;continue;}
+        if(page==2 && key==BUTTON_UP_KP_ID){action=(action+2)%3;continue;}
+        if(page==2 && key==BUTTON_DOWN_KP_ID){action=(action+1)%3;continue;}
+        if(key!=BUTTON_OK_KP_ID)continue;
+        if(page==2 && action==2){
+            radar_panel("About Room Watch","Peer counts vary","Sleeping peers may hide","Not a people count",NULL);wait_back();continue;
+        }
+        if(page==2 && action==1){
+            if(!have_row){radar_panel("No result yet","Check the room first",NULL,NULL,NULL);wait_back();continue;}
+            radar_panel("Save baseline?","Replaces saved snapshot","Use a normal room state","Back cancels","Save");
+            do{key=radar_key(portMAX_DELAY);}while(key!=BUTTON_BACK_KP_ID && key!=BUTTON_OK_KP_ID);
+            if(key==BUTTON_OK_KP_ID){
+                if(watch_save(&row)){base=row;have_base=true;page=1;}
+                else{radar_panel("Baseline not saved","Check mounted SD card","Previous copy retained",NULL,NULL);wait_back();}
+            }continue;
+        }
+watch_retry:
+        if(!room_radar_connect_network())continue;
+        bool cancelled=false;room_watch_snapshot_t next={0};
+        if(watch_capture(&next,&cancelled)){
+            row=next;have_row=true;page=0;
+            if(!watch_log(&row)){radar_panel("Result not logged","Current result is shown","Check mounted SD card",NULL,NULL);wait_back();}
+        }else if(!cancelled){
+            radar_panel("Check not completed","Wi-Fi may have changed","OK retries; Back exits",NULL,"Retry");
+            do{key=radar_key(portMAX_DELAY);}while(key!=BUTTON_BACK_KP_ID && key!=BUTTON_OK_KP_ID);
+            if(key==BUTTON_BACK_KP_ID)return;
+            goto watch_retry;
         }
     }
 }
