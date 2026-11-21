@@ -1,6 +1,6 @@
 <div align="center">
 
-**RoomScope r26 USB diagnostics:** corrects USB command checksums, isolates incoming data from debug output, and protects replies until transmission completes. Automated checks use a direct, bounded diagnostic channel for Wi-Fi scans, LAN discovery and ambient Room Motion windows. These checks do not establish walking detection or a people count.
+**RoomScope r26 USB diagnostics:** corrects USB command checksums, isolates incoming data from debug output, and protects replies until transmission completes. Automated checks use a direct, bounded diagnostic channel for Wi-Fi scans, LAN discovery and ambient Room Motion windows. These checks do not establish walking detection or a people count. **M1 hardware check (20 November 2026):** three fresh USB sessions and 30 pings passed; Wi-Fi scans succeeded before and after LAN discovery and three completed CSI captures. Walking detection and occupancy remain unverified.
 
 **RoomScope r24 navigation:** Wi-Fi Signal Map, Room Motion, LAN Devices, Remote Controls, Saved Test Devices, Settings, and Tools are on the home screen. **Settings > Switch Firmware** opens the bank-switch confirmation directly. Visual remotes pack available controls without interior gaps, center a lone final-row button, and balance the final two pages to avoid a page containing just one button. Signal files retain their original command indexes.
 
