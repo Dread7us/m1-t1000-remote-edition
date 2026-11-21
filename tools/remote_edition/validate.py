@@ -1551,6 +1551,126 @@ int main(void){room_watch_snapshot_t row={0};bool cancelled=false;row.peers=99;
 (out/'room-watch-capture.c').write_text(watch_capture_test)
 exe=compile('room-watch-capture',[out/'room-watch-capture.c']);print(run([exe]))
 
+watch_monitor_test=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_room_watch.h"
+int main(void) {
+ room_watch_preferences_t p=ROOM_WATCH_DEFAULTS,q={0};uint8_t bytes[12],bad[12];
+ assert(room_watch_prefs_encode(&p,bytes) && room_watch_prefs_decode(bytes,12,&q));
+ assert(q.interval==1 && q.alerts==1 && q.sensitivity==1);
+ for(unsigned i=0;i<12;i++){memcpy(bad,bytes,12);bad[i]^=1;assert(!room_watch_prefs_decode(bad,12,&q));}
+ p.interval=4;assert(!room_watch_prefs_encode(&p,bytes));p=(room_watch_preferences_t)ROOM_WATCH_DEFAULTS;
+ assert(room_watch_interval_ms(&p)==120000 && !room_watch_due(119999,0,120000) && room_watch_due(120000,0,120000));
+ assert(room_watch_due(59984U,0xfffffff0U,60000U));
+ room_watch_snapshot_t base={0};strcpy(base.network,"Home");strcpy(base.bssid,"aa:bb:cc:dd:ee:ff");base.rssi=-40;base.channel=5;base.networks=20;base.peers=20;
+ room_watch_snapshot_t row=base;row.networks=23;assert(!room_watch_changes(&row,&base,&p));row.networks=24;assert(room_watch_changes(&row,&base,&p)==1);
+ row=base;row.peers=16;assert(room_watch_changes(&row,&base,&p)==8);
+ row=base;row.rssi=-52;assert(room_watch_changes(&row,&base,&p)==32);
+ row=base;row.channel=10;assert(room_watch_changes(&row,&base,&p)==64);
+ row=base;row.bssid[0]='1';assert(room_watch_changes(&row,&base,&p)==128);
+ for(unsigned bit=1;bit<=64;bit<<=1){
+  room_watch_filter_t f={0};assert(!room_watch_confirm(&f,(uint8_t)bit));
+  assert(room_watch_confirm(&f,(uint8_t)bit)==bit);
+  for(unsigned i=0;i<10;i++)assert(!room_watch_confirm(&f,(uint8_t)bit));
+  assert(!room_watch_confirm(&f,0));assert(!room_watch_confirm(&f,(uint8_t)bit));
+  assert(!room_watch_confirm(&f,0));assert(!room_watch_confirm(&f,0));
+  assert(!room_watch_confirm(&f,(uint8_t)bit));assert(room_watch_confirm(&f,(uint8_t)bit)==bit);
+ }
+ room_watch_filter_t f={0};assert(!room_watch_confirm(&f,1));assert(!room_watch_confirm(&f,128));assert(!room_watch_confirm(&f,1));
+ assert(room_watch_confirm(&f,1)==1);assert(!room_watch_confirm(&f,128));assert(!room_watch_confirm(&f,1));assert(!room_watch_confirm(&f,1));
+ puts("PASS: monitoring confirms persistent changes, rejects noise, suppresses repeats, rearms and survives timer wrap");return 0;
+}
+"""
+(out/'room-watch-monitor.c').write_text(watch_monitor_test)
+exe=compile('room-watch-monitor',[out/'room-watch-monitor.c']);print(run([exe]))
+prefs_store=watch_store[:watch_store.index('static bool watch_load_file(')]
+prefs_store=prefs_store.replace('WATCH_PATH','WATCH_PREF_PATH').replace('"0:/System/room-watch.dat"','"0:/System/room-watch-settings.dat"').replace('watch_recovered','watch_prefs_recovered')
+for signature in ['static bool watch_prefs_load_file(const char *path,room_watch_preferences_t *snapshot)',
+                  'static bool watch_prefs_load(room_watch_preferences_t *snapshot)',
+                  'static bool watch_prefs_save(const room_watch_preferences_t *snapshot)']:
+ prefs_store+='\n'+function_body(watch_source,signature)
+prefs_store+=r"""
+int main(void){
+ room_watch_preferences_t p={0,2,0},q=ROOM_WATCH_DEFAULTS;
+ remove("System/room-watch-settings.dat");remove("System/room-watch-settings.dat.bak");remove("System/room-watch-settings.dat.tmp");
+ assert(watch_prefs_save(&p) && watch_prefs_load(&q) && q.alerts==2 && q.interval==0);
+ p.interval=3;fail_write=1;assert(!watch_prefs_save(&p));fail_write=0;assert(watch_prefs_load(&q) && q.interval==0);
+ fail_replace=1;assert(!watch_prefs_save(&p));fail_replace=0;assert(watch_prefs_load(&q) && q.interval==0);
+ assert(watch_prefs_save(&p));FILE *f=fopen("System/room-watch-settings.dat","wb");assert(f);fputs("bad",f);fclose(f);
+ assert(watch_prefs_load(&q) && watch_prefs_recovered && q.interval==0);
+ puts("PASS: monitoring preferences persist and recover from interrupted saves and corrupt primary");return 0;
+}
+"""
+(out/'room-watch-preferences.c').write_text(prefs_store)
+exe=compile('room-watch-preferences',[out/'room-watch-preferences.c',shim/'ff_shim.c']);print(run([exe]))
+
+watch_loop_test=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_room_watch.h"
+#define BUTTON_OK_KP_ID 0
+#define BUTTON_UP_KP_ID 1
+#define BUTTON_LEFT_KP_ID 2
+#define BUTTON_RIGHT_KP_ID 3
+#define BUTTON_DOWN_KP_ID 4
+#define BUTTON_BACK_KP_ID 5
+#define pdMS_TO_TICKS(n) (n)
+#define portMAX_DELAY 0xffffffffU
+static room_watch_preferences_t watch_preferences=ROOM_WATCH_DEFAULTS;
+static bool watch_running;static uint32_t watch_finished,now;
+static unsigned watch_failures,watch_alert_count,keys,captures,events,logs,mode;
+static char watch_notice[32];static room_watch_filter_t watch_filter;
+static uint32_t HAL_GetTick(void){return now;}
+static bool watch_load(room_watch_snapshot_t *s){memset(s,0,sizeof(*s));strcpy(s->network,"Home");strcpy(s->bssid,"aa:bb:cc:dd:ee:ff");s->rssi=-40;s->channel=5;s->networks=20;s->peers=20;return true;}
+static bool watch_prefs_load(room_watch_preferences_t *p){p->interval=0;return true;}
+static void watch_draw(const room_watch_snapshot_t *r,const room_watch_snapshot_t *b,bool a,bool c,unsigned p,unsigned k){(void)r;(void)b;(void)a;(void)c;(void)p;(void)k;}
+static int radar_key(unsigned wait){(void)wait;++keys;assert(keys<10);if(keys<=2)return 3;if(keys==3)return 0;if(keys==4){now+=60001;return -1;}return 5;}
+static void watch_stop(const char *m){watch_running=false;snprintf(watch_notice,32,"%s",m);}
+static bool room_radar_connect_network(void){return true;}
+static void radar_panel(const char *t,const char *a,const char *b,const char *c,const char *d){(void)t;(void)a;(void)b;(void)c;(void)d;}
+static void wait_back(void){assert(0);}
+static void watch_settings(void){assert(0);}
+static bool watch_save(const room_watch_snapshot_t *s){(void)s;assert(0);return false;}
+static bool watch_capture(room_watch_snapshot_t *s,bool *cancel){++captures;now+=30000;*cancel=mode==2;if(mode==1 || mode==2)return false;watch_load(s);s->networks+=10;if(mode==3)s->bssid[0]='1';return true;}
+static bool watch_log(const room_watch_snapshot_t *s){(void)s;++logs;return true;}
+static bool watch_event_log(uint8_t b,const room_watch_snapshot_t *r,const room_watch_snapshot_t *s){(void)r;(void)s;assert(b==1);++events;return true;}
+static void watch_alert(const char *m){++watch_alert_count;snprintf(watch_notice,32,"%s",m);}
+"""+function_body(watch_source,'void room_watch_open(void)')+r"""
+int main(void){
+ for(mode=0;mode<4;mode++){
+  now=keys=captures=events=logs=0;room_watch_open();assert(!watch_running);
+  if(mode==0)assert(captures==2 && events==1 && logs==2 && watch_alert_count==1);
+  if(mode==1)assert(captures==2 && events==0 && logs==0 && watch_alert_count==1);
+  if(mode==2)assert(captures==1 && events==0 && logs==0 && watch_alert_count==0);
+  if(mode==3)assert(captures==1 && events==0 && watch_alert_count==1);
+ }
+ puts("PASS: actual monitor loop schedules checks, confirms changes, retries failures, stops on Back and rejects changed routers");return 0;}
+"""
+(out/'room-watch-loop.c').write_text(watch_loop_test)
+exe=compile('room-watch-loop',[out/'room-watch-loop.c']);print(run([exe]))
+watch_alert_test=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <stdint.h>
+#include "m1_room_watch.h"
+static room_watch_preferences_t watch_preferences=ROOM_WATCH_DEFAULTS;
+static char watch_notice[32];static unsigned watch_alert_count,beeps;
+static struct {uint32_t active_timestamp;} m1_device_stat;
+static uint32_t HAL_GetTick(void){return 500;}
+static void m1_buzzer_notification2(void){++beeps;}
+"""+function_body(watch_source,'static void watch_alert(const char *message)')+r"""
+int main(void){
+ watch_preferences.alerts=0;watch_alert("Test");assert(!watch_alert_count && !beeps && !m1_device_stat.active_timestamp);
+ watch_preferences.alerts=1;watch_alert("Screen");assert(watch_alert_count==1 && !beeps && m1_device_stat.active_timestamp==500);
+ watch_preferences.alerts=2;watch_alert("Beep");assert(watch_alert_count==2 && beeps==1 && !strcmp(watch_notice,"Beep"));
+ puts("PASS: alert Off/Screen/Beep modes honor settings and wake the display without overriding brightness");return 0;}
+"""
+(out/'room-watch-alert.c').write_text(watch_alert_test)
+exe=compile('room-watch-alert',[out/'room-watch-alert.c']);print(run([exe]))
+
 print(run([sys.executable, repo/'tools/room_radar/test_device_check.py']))
 print(run([sys.executable, repo/'tools/room_radar/test_motion_trial.py']))
 

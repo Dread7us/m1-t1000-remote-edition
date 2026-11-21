@@ -61,5 +61,52 @@ static inline bool room_watch_same_network(const room_watch_snapshot_t *a,const 
     }
     return !strcmp(a->network,b->network);
 }
+
+#define WATCH_PREF_SIZE 12U
+typedef struct {uint8_t interval,alerts,sensitivity;} room_watch_preferences_t;
+#define ROOM_WATCH_DEFAULTS {1,1,1}
+static inline bool room_watch_preferences_valid(const room_watch_preferences_t *p) {
+    return p->interval<4 && p->alerts<3 && p->sensitivity<3;
+}
+static inline uint32_t room_watch_interval_ms(const room_watch_preferences_t *p) {
+    const unsigned minutes[]={1,2,5,10};return minutes[p->interval<4?p->interval:1]*60000U;
+}
+static inline bool room_watch_prefs_encode(const room_watch_preferences_t *p,uint8_t *b) {
+    if(!room_watch_preferences_valid(p))return false;
+    memset(b,0,WATCH_PREF_SIZE);memcpy(b,"RWP1",4);b[4]=p->interval;b[5]=p->alerts;b[6]=p->sensitivity;
+    room_watch_put(b+8,room_watch_hash(b,8),4);return true;
+}
+static inline bool room_watch_prefs_decode(const uint8_t *b,unsigned n,room_watch_preferences_t *p) {
+    if(n!=WATCH_PREF_SIZE || memcmp(b,"RWP1",4) || b[7] || room_watch_get(b+8,4)!=room_watch_hash(b,8))return false;
+    room_watch_preferences_t q={b[4],b[5],b[6]};
+    if(!room_watch_preferences_valid(&q))return false;*p=q;return true;
+}
+typedef struct {uint8_t on[7],off[7],latched;} room_watch_filter_t;
+static inline uint8_t room_watch_changes(const room_watch_snapshot_t *row,const room_watch_snapshot_t *base,
+                                         const room_watch_preferences_t *p) {
+    if(!room_watch_valid(row) || !room_watch_valid(base) || !room_watch_same_network(row,base))return 128;
+    const unsigned counts[]={2,4,8},signals[]={8,12,18};
+    unsigned sensitivity=p->sensitivity<3?p->sensitivity:1;
+    int dn=(int)row->networks-(int)base->networks,dp=(int)row->peers-(int)base->peers,ds=row->rssi-base->rssi;
+    unsigned count=counts[sensitivity],signal=signals[sensitivity];uint8_t bits=0;
+    if(dn>=(int)count)bits|=1;if(dn<=-(int)count)bits|=2;
+    if(dp>=(int)count)bits|=4;if(dp<=-(int)count)bits|=8;
+    if(ds>=(int)signal)bits|=16;if(ds<=-(int)signal)bits|=32;
+    if(row->channel!=base->channel)bits|=64;return bits;
+}
+static inline uint8_t room_watch_confirm(room_watch_filter_t *filter,uint8_t bits) {
+    uint8_t events=0;
+    if(bits&128){memset(filter->on,0,7);memset(filter->off,0,7);return 0;}
+    for(unsigned i=0;i<7;i++) {
+        uint8_t bit=(uint8_t)(1U<<i);
+        if(bits&bit){filter->off[i]=0;if(filter->on[i]<2)filter->on[i]++;
+            if(filter->on[i]==2 && !(filter->latched&bit)){filter->latched|=bit;events|=bit;}}
+        else {filter->on[i]=0;if(filter->off[i]<2)filter->off[i]++;
+            if(filter->off[i]==2)filter->latched&=(uint8_t)~bit;}
+    }return events;
+}
+static inline bool room_watch_due(uint32_t now,uint32_t finished,uint32_t interval) {
+    return (uint32_t)(now-finished)>=interval;
+}
 void room_watch_open(void);
 #endif

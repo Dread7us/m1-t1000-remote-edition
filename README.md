@@ -1,5 +1,11 @@
 <div align="center">
 
+**RoomScope r28 — automatic Room Watch:** Start/Stop monitoring, a live countdown, saved scan pauses of 1/2/5/10 minutes, Off/Screen/Screen + Beep alerts, and High/Normal/Low sensitivity. Changes require two consecutive checks; the same change stays suppressed until two checks return below its threshold. Back stops monitoring. Monitoring runs while Room Watch stays open and does not restart automatically after reboot. Settings include a Test alert action. [Monitoring guide](documentation/remote-edition/room-watch-monitoring.md).
+
+<img src="documentation/remote-edition/room-watch-monitor-preview.png" alt="Automatic Room Watch countdown, confirmed-change message, and monitor settings action" width="880">
+
+<sub>Rendered from firmware drawing code and fonts; example values.</sub>
+
 **RoomScope r27 — Room Watch:** a new home-screen tool captures nearby Wi-Fi network count, responding LAN peer count, connected-router signal and channel. Save an explicit baseline, then compare later checks on the same router. Left/Right switches between Snapshot, Changes and Actions; center OK runs a check. Baselines use checksummed storage with a recovery copy, and completed checks append to `System/room-watch.csv`. Sleeping peers and radio range affect counts; this is not a people counter or an intrusion verdict. **Checked on the M1 (20 November 2026):** completed two room checks, saved and reloaded the baseline, verified exact comparison values and log entries, and cancelled a third check without logging a partial result. Basic Wi-Fi, LAN discovery and CSI capture also passed.
 
 <img src="documentation/remote-edition/room-watch-preview.png" alt="Room Watch snapshot, baseline changes, actions, and first-use screens" width="880">
