@@ -1,5 +1,7 @@
 <div align="center">
 
+**RoomScope r29 — hardware-verified monitoring:** baseline save/readback/reload and backup preservation passed on the M1. Three scheduled scans verified **0 → 1 → 1 alerts** against a controlled test baseline, with the real baseline restored afterward. Wi-Fi and CSI capture passed afterward. Live USB status now makes these checks repeatable without SD-read/write races. [Validation and test runner](documentation/remote-edition/room-watch-monitoring.md#r29-hardware-validation--21-november-2026).
+
 **RoomScope r28 — automatic Room Watch:** Start/Stop monitoring, a live countdown, saved scan pauses of 1/2/5/10 minutes, Off/Screen/Screen + Beep alerts, and High/Normal/Low sensitivity. Changes require two consecutive checks; the same change stays suppressed until two checks return below its threshold. Back stops monitoring. Monitoring runs while Room Watch stays open and does not restart automatically after reboot. Settings include a Test alert action. [Monitoring guide](documentation/remote-edition/room-watch-monitoring.md).
 
 <img src="documentation/remote-edition/room-watch-monitor-preview.png" alt="Automatic Room Watch countdown, confirmed-change message, and monitor settings action" width="880">

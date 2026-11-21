@@ -1724,6 +1724,7 @@ assert status_data['checks']==4 and status_data['rssi']==-52 and status_data['sa
 print('PASS: live monitor status is bounded, coherent and readable without SD access')
 
 print(run([sys.executable, repo/'tools/room_radar/test_device_check.py']))
+print(run([sys.executable, repo/'tools/room_radar/test_watch_client.py']))
 print(run([sys.executable, repo/'tools/room_radar/test_motion_trial.py']))
 
 (out/'test-results.txt').write_text('\n'.join(log))

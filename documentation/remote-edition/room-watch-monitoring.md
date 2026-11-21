@@ -23,8 +23,20 @@ Completed snapshots append to `System/room-watch.csv`. Confirmed changes append 
 
 These are network observations. Sleeping peers, radio conditions and background traffic can change the counts; an event is not an intrusion or occupancy verdict.
 
-## r28 beta validation status
+## r29 hardware validation — 21 November 2026
 
-The firmware builds and native regression suite pass. On-device checks confirmed basic Wi-Fi, saved preference reload, the Test alert screen, and Alerts Off suppressing the test counter. The first automatic capture completed; the repeated-scan trial stopped because the connected mesh AP differed from the saved baseline. That context guard is intentional. A full repeated-scan trial with a baseline for the current AP, and confirmation of the baseline-save UI sequence, remain pending. Physical beep audibility has not been independently verified. Monitoring was left stopped at the end of the session.
+The M1 passed baseline save, byte-for-byte readback, backup preservation and reload. Three real scheduled scans completed with a one-minute pause: completion spacing was 84.8 and 84.3 seconds, including each scan's runtime. A temporary synthetic baseline produced alert counts **0 → 1 → 1**, verifying two-check confirmation and repeat suppression. Back stopped monitoring. The real baseline was restored and verified; synthetic alert history and the temporary recovery file were removed. Wi-Fi scans and a 51-sample CSI capture passed afterward. This validates the alert mechanism, not intrusion or occupancy accuracy. Audible beep output has not been independently heard; screen notifications and the buzzer call path are covered.
 
-See also [saved-device beta status](device-beta-status.md) for the distinction between AP targeting and individual-client modes.
+### Safe USB automation
+
+FatFs in this build is not configured for concurrent access. Remote file operations now return Busy while a tool is active. Use the live Room Watch status channel for progress; exit the app before reading or changing SD files. The status reports include confirmation phase, completed scans, monitor state and baseline-save attempts/results. Automation waits for these acknowledgements instead of sending timed bursts of buttons.
+
+The opt-in hardware runner is:
+
+```text
+python tools/room_radar/verify_watch_hardware.py --output local-test-results --temporary-baseline
+```
+
+Start with Room Watch closed and highlighted on the home menu, connected to Wi-Fi, with a valid baseline and one-minute Screen alert settings. The runner backs up the baseline, installs an explicit test fixture, collects three live scans, verifies confirmation and suppression, and restores the original baseline and alert history in cleanup. It exits unsuccessfully if the test or restoration fails. Test reports may contain local network details; keep them private.
+
+See [saved-device beta status](device-beta-status.md) for the distinction between access-point targeting and individual-client modes.
