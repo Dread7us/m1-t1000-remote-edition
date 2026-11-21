@@ -1623,6 +1623,7 @@ static room_watch_preferences_t watch_preferences=ROOM_WATCH_DEFAULTS;
 static bool watch_running;static uint32_t watch_finished,now;
 static unsigned watch_failures,watch_alert_count,keys,captures,events,logs,mode;
 static char watch_notice[32];static room_watch_filter_t watch_filter;
+static bool watch_active;static unsigned watch_checks,watch_phase,watch_save_attempts,watch_save_result;
 static uint32_t HAL_GetTick(void){return now;}
 static bool watch_load(room_watch_snapshot_t *s){memset(s,0,sizeof(*s));strcpy(s->network,"Home");strcpy(s->bssid,"aa:bb:cc:dd:ee:ff");s->rssi=-40;s->channel=5;s->networks=20;s->peers=20;return true;}
 static bool watch_prefs_load(room_watch_preferences_t *p){p->interval=0;return true;}
@@ -1670,6 +1671,57 @@ int main(void){
 """
 (out/'room-watch-alert.c').write_text(watch_alert_test)
 exe=compile('room-watch-alert',[out/'room-watch-alert.c']);print(run([exe]))
+
+fs_busy_test=r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#define M1_OPERATION_MODE_SUB_FUNC_RUNNING 9
+static struct {int op_mode;} m1_device_stat;
+"""+'\n'.join(line for line in (src/'m1_rpc.h').read_text().splitlines() if line.startswith('#define RPC_CMD_'))+'\n'+function_body(rpc_source,'static bool rpc_filesystem_busy(uint8_t command)')+r"""
+int main(void){
+ unsigned blocked[]={0x30,0x32,0x34,0x35,0x36,0x37,0x38,0x3b,0x3c};
+ for(unsigned mode=0;mode<2;mode++){
+  m1_device_stat.op_mode=mode?9:0;
+  for(unsigned command=0;command<256;command++){
+   bool expected=false;for(unsigned i=0;i<9;i++)if(command==blocked[i])expected=mode!=0;
+   assert(rpc_filesystem_busy((uint8_t)command)==expected);
+  }
+ }
+ puts("PASS: active tools own SD access while live status, screen and input remain available");return 0;
+}
+"""
+(out/'rpc-filesystem-guard.c').write_text(fs_busy_test)
+exe=compile('rpc-filesystem-guard',[out/'rpc-filesystem-guard.c']);print(run([exe]))
+
+watch_status_test=r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_room_watch.h"
+static room_watch_preferences_t watch_preferences={0,1,1};
+static bool watch_active=true,watch_have_result=true,watch_have_base=true,watch_running=true;
+static unsigned watch_page=2,watch_action=0,watch_phase=0,watch_checks=4,watch_save_attempts=1,watch_save_result=1;
+static unsigned watch_alert_count=2,watch_networks=19,watch_peers=20;static int watch_rssi=-52;
+static uint32_t watch_finished=1000;
+static unsigned lock_depth;
+#define taskENTER_CRITICAL() (++lock_depth)
+#define taskEXIT_CRITICAL() (--lock_depth)
+static uint32_t HAL_GetTick(void){assert(lock_depth==0);return 2000;}
+"""+function_body(watch_source,'unsigned room_watch_status_json(char *out,unsigned capacity)')+r"""
+int main(void){char out[640],small[8];
+ assert(!room_watch_status_json(small,sizeof(small)) && lock_depth==0);
+ unsigned n=room_watch_status_json(out,sizeof(out));assert(n==strlen(out) && lock_depth==0);puts(out);return 0;}
+"""
+(out/'room-watch-status.c').write_text(watch_status_test)
+exe=compile('room-watch-status',[out/'room-watch-status.c']);status_text=run([exe]);
+import json
+status_data=json.loads(status_text)
+assert status_data['checks']==4 and status_data['rssi']==-52 and status_data['save_result']==1
+print('PASS: live monitor status is bounded, coherent and readable without SD access')
 
 print(run([sys.executable, repo/'tools/room_radar/test_device_check.py']))
 print(run([sys.executable, repo/'tools/room_radar/test_motion_trial.py']))

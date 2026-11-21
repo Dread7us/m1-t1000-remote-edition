@@ -699,6 +699,24 @@ static uint32_t watch_finished;
 static unsigned watch_failures,watch_alert_count;
 static char watch_notice[32];
 static room_watch_filter_t watch_filter;
+static bool watch_active,watch_have_result,watch_have_base;
+static unsigned watch_page,watch_action,watch_phase,watch_checks,watch_save_attempts,watch_save_result;
+static unsigned watch_networks,watch_peers;static int watch_rssi;
+unsigned room_watch_status_json(char *out,unsigned capacity)
+{
+    unsigned active,page,action,phase,running,have_result,have_base,checks,attempts,saved,alerts,interval,mode,sensitivity,networks,peers;
+    int rssi;uint32_t finished;
+    taskENTER_CRITICAL();
+    active=watch_active;page=watch_page;action=watch_action;phase=watch_phase;running=watch_running;
+    have_result=watch_have_result;have_base=watch_have_base;checks=watch_checks;attempts=watch_save_attempts;saved=watch_save_result;
+    alerts=watch_alert_count;interval=watch_preferences.interval;mode=watch_preferences.alerts;sensitivity=watch_preferences.sensitivity;
+    networks=watch_networks;peers=watch_peers;rssi=watch_rssi;finished=watch_finished;
+    taskEXIT_CRITICAL();
+    int n=snprintf(out,capacity,"{\"active\":%u,\"page\":%u,\"action\":%u,\"phase\":%u,\"running\":%u,\"has_result\":%u,\"has_baseline\":%u,\"checks\":%u,\"save_attempts\":%u,\"save_result\":%u,\"alert_count\":%u,\"interval\":%u,\"alerts\":%u,\"sensitivity\":%u,\"networks\":%u,\"peers\":%u,\"rssi\":%d,\"finished_ms\":%lu,\"now_ms\":%lu}",
+        active,page,action,phase,running,have_result,have_base,checks,attempts,saved,alerts,interval,mode,sensitivity,networks,peers,rssi,(unsigned long)finished,(unsigned long)HAL_GetTick());
+    return n>0 && (unsigned)n<capacity?(unsigned)n:0;
+}
+
 static void watch_stop(const char *message) {
     watch_running=false;snprintf(watch_notice,sizeof(watch_notice),"%s",message);
 }
@@ -723,6 +741,7 @@ static void watch_settings(void) {
     const char *alerts[]={"Off","Screen","Screen + beep"};
     const char *sensitivity[]={"High","Normal","Low"};
     for(;;){
+        watch_phase=4;
         char rows[4][40];strcpy(rows[3],"Test alert");snprintf(rows[0],40,"Scan pause: %s",intervals[watch_preferences.interval]);
         snprintf(rows[1],40,"Alerts: %s",alerts[watch_preferences.alerts]);
         snprintf(rows[2],40,"Sensitivity: %s",sensitivity[watch_preferences.sensitivity]);
@@ -749,12 +768,16 @@ static void watch_settings(void) {
         if(watch_prefs_save(&next)){
             watch_preferences=next;memset(&watch_filter,0,sizeof(watch_filter));
             watch_finished=HAL_GetTick();watch_notice[0]=0;
-        }else{radar_panel("Settings not saved","Previous values kept","Check mounted SD card",NULL,NULL);wait_back();}
+        }else{radar_panel("Save error","Previous values kept","Check mounted SD card",NULL,NULL);wait_back();}
     }
 }
 static void watch_draw(const room_watch_snapshot_t *row,const room_watch_snapshot_t *base,
                        bool have_row,bool have_base,unsigned page,unsigned action)
 {
+    taskENTER_CRITICAL();
+    watch_page=page;watch_action=action;watch_phase=0;watch_have_result=have_row;watch_have_base=have_base;
+    if(have_row){watch_networks=row->networks;watch_peers=row->peers;watch_rssi=row->rssi;}
+    taskEXIT_CRITICAL();
     static const uint8_t icon[]={0x18,0x3c,0x7e,0xdb,0xdb,0x7e,0x3c,0x18};
     char a[40],b[40],c[40];const char *foot="Check";
     char position[8];snprintf(position,sizeof(position),"%u/4 %c",page+1,watch_running?'*':'>');
@@ -807,45 +830,50 @@ void room_watch_open(void)
     watch_preferences=(room_watch_preferences_t)ROOM_WATCH_DEFAULTS;
     watch_prefs_load(&watch_preferences);watch_running=false;watch_failures=0;watch_alert_count=0;
     memset(&watch_filter,0,sizeof(watch_filter));watch_notice[0]=0;
+    watch_active=true;watch_checks=0;
     unsigned page=0,action=0;
     for(;;){
         bool automatic=watch_running && room_watch_due(HAL_GetTick(),watch_finished,room_watch_interval_ms(&watch_preferences));
         if(automatic)goto watch_capture_now;
         watch_draw(&row,&base,have_row,have_base,page,action);
         int key=radar_key(pdMS_TO_TICKS(100));
-        if(key==BUTTON_BACK_KP_ID){if(watch_running){watch_stop("Monitoring stopped");page=2;continue;}return;}
+        if(key==BUTTON_BACK_KP_ID){if(watch_running){watch_stop("Monitoring stopped");page=2;continue;}watch_active=false;return;}
         if(key==BUTTON_LEFT_KP_ID){page=(page+3)%4;continue;}
         if(key==BUTTON_RIGHT_KP_ID){page=(page+1)%4;continue;}
         if(page==3 && key==BUTTON_UP_KP_ID){action=(action+5)%6;continue;}
         if(page==3 && key==BUTTON_DOWN_KP_ID){action=(action+1)%6;continue;}
         if(key!=BUTTON_OK_KP_ID)continue;
         if(page==3 && action==5){
-            radar_panel("About Room Watch","Keep Room Watch open","Pause is after a check","Not a people count",NULL);wait_back();continue;
+            radar_panel("About","Keep Room Watch open","Pause is after a check","Not a people count",NULL);wait_back();continue;
         }
         if(page==3 && action==4){watch_notice[0]=0;continue;}
         if(page==3 && action==3){watch_settings();page=2;continue;}
         if(page==2 || (page==3 && action==0)){
             if(watch_running){watch_stop("Monitoring stopped");page=2;continue;}
-            if(!have_base){radar_panel("Save a baseline first","Check room, then save","Actions > Save baseline",NULL,NULL);wait_back();continue;}
+            if(!have_base){radar_panel("Need base","Check room, then save","Actions > Save baseline",NULL,NULL);wait_back();continue;}
             if(!room_radar_connect_network())continue;
             watch_running=true;watch_failures=0;watch_notice[0]=0;memset(&watch_filter,0,sizeof(watch_filter));page=2;
             watch_finished=HAL_GetTick()-room_watch_interval_ms(&watch_preferences);
             continue;
         }
         if(page==3 && action==2){
-            if(!have_row){radar_panel("No result yet","Check the room first",NULL,NULL,NULL);wait_back();continue;}
-            radar_panel("Save baseline?","Replaces saved snapshot","Monitoring will stop","Back cancels","Save");
+            if(!have_row){radar_panel("No result","Check the room first",NULL,NULL,NULL);wait_back();continue;}
+            watch_phase=1;
+            radar_panel("Save base?","Replaces saved snapshot","Monitoring will stop","Back cancels","Save");
             do{key=radar_key(portMAX_DELAY);}while(key!=BUTTON_BACK_KP_ID && key!=BUTTON_OK_KP_ID);
             if(key==BUTTON_OK_KP_ID){
-                if(watch_save(&row)){base=row;have_base=true;watch_stop("New baseline saved");memset(&watch_filter,0,sizeof(watch_filter));page=1;}
-                else{radar_panel("Baseline not saved","Check mounted SD card","Previous copy retained",NULL,NULL);wait_back();}
+                watch_phase=2;++watch_save_attempts;
+                bool saved=watch_save(&row);watch_save_result=saved?1:2;
+                if(saved){base=row;have_base=true;watch_stop("New baseline saved");memset(&watch_filter,0,sizeof(watch_filter));page=1;}
+                else{radar_panel("Save error","Check mounted SD card","Previous copy retained",NULL,NULL);wait_back();}
             }continue;
         }
         if(!room_radar_connect_network())continue;
 watch_capture_now:;
+        watch_phase=3;
         bool cancelled=false;room_watch_snapshot_t next={0};
         if(watch_capture(&next,&cancelled)){
-            row=next;have_row=true;if(watch_failures)watch_notice[0]=0;watch_failures=0;watch_finished=HAL_GetTick();
+            ++watch_checks;row=next;have_row=true;if(watch_failures)watch_notice[0]=0;watch_failures=0;watch_finished=HAL_GetTick();
             if(!watch_log(&row))snprintf(watch_notice,sizeof(watch_notice),"Snapshot log not saved");
             if(watch_running){
                 uint8_t bits=room_watch_changes(&row,&base,&watch_preferences);
@@ -868,9 +896,9 @@ watch_capture_now:;
                 snprintf(watch_notice,sizeof(watch_notice),"Check failed; will retry");
                 if(watch_failures==2)watch_alert("Repeated check failures");
                 page=2;
-            }else{radar_panel("Check not completed","Wi-Fi may have changed","OK retries; Back exits",NULL,"Retry");
+            }else{radar_panel("Scan error","Wi-Fi may have changed","OK retries; Back exits",NULL,"Retry");
                 do{key=radar_key(portMAX_DELAY);}while(key!=BUTTON_BACK_KP_ID && key!=BUTTON_OK_KP_ID);
-                if(key==BUTTON_BACK_KP_ID)return;
+                if(key==BUTTON_BACK_KP_ID){watch_active=false;return;}
                 goto watch_capture_now;
             }
         }

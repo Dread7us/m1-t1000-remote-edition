@@ -47,6 +47,7 @@
 #include "FreeRTOS_CLI.h"
 #include "m1_power_ctl.h"
 #include "m1_sys_init.h"
+#include "m1_room_watch.h"
 #include "esp_app_main.h"
 
 /*************************** D E F I N E S ************************************/
@@ -528,8 +529,28 @@ static void rpc_parse_byte(uint8_t byte)
 /**
  * @brief  Route a validated frame to the appropriate handler.
  */
+static bool rpc_filesystem_busy(uint8_t command)
+{
+    if(m1_device_stat.op_mode!=M1_OPERATION_MODE_SUB_FUNC_RUNNING)return false;
+    switch(command){
+        case RPC_CMD_FILE_LIST:case RPC_CMD_FILE_READ:
+        case RPC_CMD_FILE_WRITE_START:case RPC_CMD_FILE_WRITE_DATA:case RPC_CMD_FILE_WRITE_FINISH:
+        case RPC_CMD_FILE_DELETE:case RPC_CMD_FILE_MKDIR:case RPC_CMD_SD_UNMOUNT:case RPC_CMD_SD_MOUNT:return true;
+        default:return false;
+    }
+}
 static void rpc_dispatch_frame(const S_RPC_Frame *frame)
 {
+    /* FatFs is not reentrant. Active tools own SD access; automation uses
+     * live status instead of polling files during app writes. */
+    if(rpc_filesystem_busy(frame->cmd)){m1_rpc_send_nack(frame->seq,RPC_ERR_BUSY);return;}
+    if(frame->cmd==RPC_CMD_WATCH_STATUS){
+        static char status[640];
+        unsigned n=room_watch_status_json(status,sizeof(status));
+        m1_rpc_send_frame(RPC_CMD_WATCH_STATUS_RESP,frame->seq,(const uint8_t*)status,(uint16_t)n);
+        return;
+    }
+
     M1_LOG_I(M1_LOGDB_TAG, "DISPATCH cmd=0x%02X seq=%u len=%u\r\n",
              frame->cmd, frame->seq, frame->len);
 

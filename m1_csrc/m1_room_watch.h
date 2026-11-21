@@ -108,5 +108,6 @@ static inline uint8_t room_watch_confirm(room_watch_filter_t *filter,uint8_t bit
 static inline bool room_watch_due(uint32_t now,uint32_t finished,uint32_t interval) {
     return (uint32_t)(now-finished)>=interval;
 }
+unsigned room_watch_status_json(char *out,unsigned capacity);
 void room_watch_open(void);
 #endif
