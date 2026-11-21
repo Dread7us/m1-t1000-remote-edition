@@ -48,6 +48,7 @@
 #include "m1_power_ctl.h"
 #include "m1_sys_init.h"
 #include "m1_room_watch.h"
+#include "m1_wifi_client_lab.h"
 #include "esp_app_main.h"
 
 /*************************** D E F I N E S ************************************/
@@ -544,6 +545,10 @@ static void rpc_dispatch_frame(const S_RPC_Frame *frame)
     /* FatFs is not reentrant. Active tools own SD access; automation uses
      * live status instead of polling files during app writes. */
     if(rpc_filesystem_busy(frame->cmd)){m1_rpc_send_nack(frame->seq,RPC_ERR_BUSY);return;}
+    if(frame->cmd==RPC_CMD_CLIENT_LAB_STATUS){
+        static char status[320];unsigned n=wifi_client_lab_status_json(status,sizeof(status));
+        m1_rpc_send_frame(RPC_CMD_CLIENT_LAB_STATUS_RESP,frame->seq,(const uint8_t*)status,(uint16_t)n);return;
+    }
     if(frame->cmd==RPC_CMD_WATCH_STATUS){
         static char status[640];
         unsigned n=room_watch_status_json(status,sizeof(status));

@@ -1723,6 +1723,99 @@ status_data=json.loads(status_text)
 assert status_data['checks']==4 and status_data['rssi']==-52 and status_data['save_result']==1
 print('PASS: live monitor status is bounded, coherent and readable without SD access')
 
+client_source=(src/'m1_wifi_client_lab.c').read_text()
+client_model_test=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_wifi_client_lab.h"
+static wifi_client_profile_t good(void){wifi_client_profile_t p={0};strcpy(p.name,"Test client");strcpy(p.station,"02:11:22:33:44:55");strcpy(p.ap,"04:11:22:33:44:66");strcpy(p.ip,"192.168.1.2");p.channel=5;return p;}
+int main(void){wifi_client_profile_t p=good();char cmd[112];assert(sizeof(p)==78 && client_profile_valid(&p));
+ assert(client_test_command(&p,cmd,sizeof(cmd)) && !strcmp(cmd,"AT+M1DEAUTH=\"04:11:22:33:44:66\",5,\"02:11:22:33:44:55\",5\r\n"));
+ const char *bad[]={"ff:ff:ff:ff:ff:ff","01:11:22:33:44:55","00:00:00:00:00:00","02:11:22:33:44:5x","02:11:22:33:44:55\r"};
+ for(unsigned i=0;i<5;i++)assert(!client_mac_valid(bad[i]));
+ strcpy(p.station,p.ap);assert(!client_test_command(&p,cmd,sizeof(cmd)));p=good();p.channel=0;assert(!client_profile_valid(&p));p.channel=15;assert(!client_profile_valid(&p));
+ p=good();strcpy(p.ip,"8.8.8.8");assert(!client_profile_valid(&p));strcpy(p.ip,"192.168.1.2\r");assert(!client_profile_valid(&p));
+ p=good();memset(p.station,'x',18);assert(!client_profile_valid(&p));
+ assert(client_attempts_reported("+M1DEAUTH:5\r\nOK\r\n",5));assert(!client_attempts_reported("+M1DEAUTH:50\r\nOK\r\n",5));assert(!client_attempts_reported("+M1DEAUTH:5garbage\r\n",5));
+ puts("PASS: client tests require distinct unicast client/router addresses, valid 2.4 GHz channels and finite five-frame requests");return 0;}
+"""
+(out/'wifi-client-model.c').write_text(client_model_test)
+exe=compile('wifi-client-model',[out/'wifi-client-model.c']);print(run([exe]))
+client_store_test=watch_store[:watch_store.index('static bool watch_load_file(')]
+client_store_test=client_store_test.replace('WATCH_PATH','CLIENT_PATH').replace('"0:/System/room-watch.dat"','"0:/System/wifi-clients.dat"').replace('watch_recovered','client_recovered')
+client_store_test+='\n#include "m1_wifi_client_lab.h"\nstatic wifi_client_profile_t clients[16];static unsigned client_count,client_lab_save_calls;static bool client_lab_save_ok;static uint8_t client_wire[1257];\n'
+for signature in ['static bool client_load_file(const char *path)','static bool client_load(void)','static bool client_save(void)','static int client_duplicate(const wifi_client_profile_t *profile,int except)']:
+ client_store_test+='\n'+function_body(client_source,signature)
+client_store_test+=r"""
+int main(void){
+ remove("System/wifi-clients.dat");remove("System/wifi-clients.dat.bak");remove("System/wifi-clients.dat.tmp");
+ assert(client_load() && client_count==0);wifi_client_profile_t p={0};strcpy(p.name,"Test");strcpy(p.station,"02:11:22:33:44:55");strcpy(p.ap,"04:11:22:33:44:66");p.channel=5;
+ clients[0]=p;client_count=1;assert(client_save() && client_load() && client_count==1);
+ assert(client_duplicate(&p,-1)==0);strcpy(clients[0].name,"Renamed");assert(client_save() && client_load() && !strcmp(clients[0].name,"Renamed"));
+ fail_write=1;strcpy(clients[0].name,"Lost");assert(!client_save());fail_write=0;assert(client_load() && !strcmp(clients[0].name,"Renamed"));
+ fail_replace=1;assert(!client_save());fail_replace=0;assert(client_load() && client_count==1);
+ assert(client_save());FILE *f=fopen("System/wifi-clients.dat","wb");assert(f);fputs("bad",f);fclose(f);assert(client_load() && client_recovered);
+ fail_replace=1;assert(!client_save());fail_replace=0;assert(client_load() && client_count==1);
+ client_count=0;assert(client_save() && client_load() && client_count==0);
+ puts("PASS: saved Wi-Fi client profiles survive reload, rename, failed writes/replacement, corrupt primary and deletion");return 0;}
+"""
+(out/'wifi-client-storage.c').write_text(client_store_test)
+exe=compile('wifi-client-storage',[out/'wifi-client-storage.c',shim/'ff_shim.c']);print(run([exe]))
+client_cleanup_test=r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
+static unsigned mode,calls,recovered,connected;
+static bool client_at(const char *cmd,char *reply,unsigned size){(void)reply;(void)size;++calls;
+ assert(!strcmp(cmd,calls==1?"AT+M1DEAUTHSTOP\r\n":"AT+M1MONITOR=0\r\n"));return mode==0 || (mode==1 && calls==2);}
+static bool wifi_room_radar_recover(void){++recovered;return mode!=2;}
+static bool room_radar_connect_network(void){++connected;return true;}
+"""+function_body(client_source,'static bool client_cleanup(void)')+r"""
+int main(void){for(mode=0;mode<3;mode++){calls=recovered=connected=0;bool ok=client_cleanup();assert(calls==2);assert(ok==(mode!=2));assert(recovered==(mode!=0));assert(connected==(mode!=2));}
+ puts("PASS: client-test cleanup attempts STA restoration even when stop fails, then recovers/reconnects or reports failure");return 0;}
+"""
+(out/'wifi-client-cleanup.c').write_text(client_cleanup_test)
+exe=compile('wifi-client-cleanup',[out/'wifi-client-cleanup.c']);print(run([exe]))
+client_run_test=r"""
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "m1_wifi_client_lab.h"
+#define M1_APP_WIFI_OFFENSIVE_ENABLE
+#define BUTTON_BACK_KP_ID 5
+#define pdMS_TO_TICKS(n) (n)
+static unsigned client_lab_tx_calls,client_lab_view,starts,cleanups,completed_saved;static uint32_t now;static unsigned mode;
+static uint32_t HAL_GetTick(void){return now;}
+static int client_key(unsigned wait){now+=wait;return mode==1 && wait>0?5:-1;}
+static bool client_preflight(const wifi_client_profile_t *p,wifi_client_profile_t *q,bool support){assert(support);*q=*p;return client_profile_valid(p);}
+static bool client_review(const wifi_client_profile_t *p,unsigned rounds,bool preview){(void)p;assert(!preview && (rounds==1 || rounds==3));return mode!=3;}
+static void client_panel(const char *t,const char *a,const char *b,const char *c,const char *d){(void)t;(void)a;(void)b;(void)c;(void)d;}
+static bool client_at(const char *cmd,char *reply,unsigned n){++starts;assert(strstr(cmd,",\"02:11:22:33:44:55\",5\r\n") && n==256);strcpy(reply,"+M1DEAUTH:5\r\nOK\r\n");return mode!=2;}
+static bool client_cleanup(void){++cleanups;return true;}
+static bool client_record(const wifi_client_profile_t *p,unsigned r,unsigned c,const char *outcome,bool restored){(void)p;assert(r==3 && restored);completed_saved=c;
+ assert(!strcmp(outcome,mode==1?"cancelled":mode==2?"radio-error":"requests-accepted-effect-unverified"));return true;}
+static void client_message(const char *t,const char *a,const char *b){(void)t;(void)a;(void)b;}
+"""+function_body(client_source,'static void client_run(const wifi_client_profile_t *profile,unsigned rounds)')+r"""
+int main(void){wifi_client_profile_t p={0};strcpy(p.name,"Test");strcpy(p.station,"02:11:22:33:44:55");strcpy(p.ap,"04:11:22:33:44:66");p.channel=5;
+ for(mode=0;mode<4;mode++){now=starts=cleanups=completed_saved=client_lab_tx_calls=0;client_run(&p,3);
+ if(mode==0)assert(starts==3 && completed_saved==3 && cleanups==1 && now==10000);
+ if(mode==1)assert(starts==1 && completed_saved==1 && cleanups==1);
+ if(mode==2)assert(starts==1 && completed_saved==0 && cleanups==1);
+ if(mode==3)assert(starts==0 && cleanups==0);
+ }
+ puts("PASS: client-specific tests stay bounded, cancel between rounds, never retry a timed-out mutation and always clean up after transmission attempts");return 0;}
+"""
+(out/'wifi-client-run.c').write_text(client_run_test)
+exe=compile('wifi-client-run',[out/'wifi-client-run.c']);print(run([exe]))
+client_disabled_test=client_run_test[:client_run_test.index('int main(void)')].replace('#define M1_APP_WIFI_OFFENSIVE_ENABLE','')+r"""
+int main(void){wifi_client_profile_t p={0};client_run(&p,3);assert(starts==0 && cleanups==0);puts("PASS: builds without offensive tools cannot start a client disconnect test");return 0;}
+"""
+(out/'wifi-client-disabled.c').write_text(client_disabled_test)
+exe=compile('wifi-client-disabled',[out/'wifi-client-disabled.c']);print(run([exe]))
+
+
 print(run([sys.executable, repo/'tools/room_radar/test_device_check.py']))
 print(run([sys.executable, repo/'tools/room_radar/test_watch_client.py']))
 print(run([sys.executable, repo/'tools/room_radar/test_motion_trial.py']))
