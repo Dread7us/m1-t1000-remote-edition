@@ -29,3 +29,15 @@ The existing companion firmware can run the map and hotspot view. LAN and motion
 The host tests cover scoring, result parsing, reply matching, and subnet bounds. The CSI classifier and radio behavior need on-device verification.
 
 Revision 23 records a session-start row (quiet window index 0), low-sample captures, and failed capture attempts in the motion CSV. The five columns are uptime in milliseconds, quiet/measure phase, window index, score, and sample count. A failed capture can have zero samples. Open, short-write, sync, and close failures are shown on screen. These records describe signal measurements; a still/walking trial must be labeled by the operator to evaluate accuracy.
+
+## USB device checks
+
+Revision 25 repairs the USB serial transmit state lookup for the composite serial/SD interface. A live M1 response is required to verify that this resolves remote-control timeouts.
+
+Install pyserial on the host, then run:
+
+```sh
+python tools/room_radar/device_check.py --lan --ambient-windows 3
+```
+
+The checker first verifies USB, radio readiness and a Wi-Fi scan. It requires an existing Wi-Fi connection before LAN or CSI jobs. It rejects an already-running Radar job and cancels a job on timeout or error. JSON results go to stdout. Ambient windows are unlabeled signal measurements; they do not establish walking detection or occupancy accuracy. Use labeled still/walking trials for that validation.

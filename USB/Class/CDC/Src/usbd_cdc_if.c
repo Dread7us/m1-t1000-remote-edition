@@ -396,26 +396,23 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   */
 uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
 {
-  uint8_t result = USBD_OK;
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-
-  if (hcdc->TxState != 0){
-    return USBD_BUSY;
-  }
+  USBD_CDC_HandleTypeDef *hcdc;
+#if M1_USB_MODE == M1_CFG_USB_CDC_MSC
+  hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassDataCmsit[CDC_InstID];
+#else
+  hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+#endif
+  if (hcdc == NULL || hcdc->TxState != 0) return USBD_BUSY;
 
 #if M1_USB_MODE == M1_CFG_USB_CDC_MSC
-  // MSC+CDC Composite
-  hUsbDeviceFS.classId = CDC_InstID;
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len, CDC_InstID);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS, CDC_InstID);
-
+  return USBD_CDC_TransmitPacket(&hUsbDeviceFS, CDC_InstID);
 #elif M1_USB_MODE == M1_CFG_USB_CDC
-  // CDC only
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+  return USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+#else
+  return USBD_FAIL;
 #endif
-
-  return result;
 }
 
 /**

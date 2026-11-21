@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Native tests for Remote Edition; does not access or flash the M1."""
 from pathlib import Path
-import subprocess, os, re, argparse, shutil, tempfile, atexit
+import subprocess, os, re, argparse, shutil, tempfile, atexit, sys
 repo=Path(__file__).resolve().parents[2]
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--cc',default=os.environ.get('CC') or shutil.which('cc') or shutil.which('gcc') or shutil.which('clang') or shutil.which('cl'))
@@ -1298,6 +1298,66 @@ int main(void) {
 """
 (out/'motion-log.c').write_text(motion_log_test)
 exe=compile('motion-log',[out/'motion-log.c']);print(run([exe]))
+
+
+usb_source=(repo/'USB/Class/CDC/Src/usbd_cdc_if.c').read_text(encoding='utf-8')
+usb_test=r"""
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#define M1_CFG_USB_CDC_MSC 1
+#define M1_CFG_USB_CDC 2
+#ifndef M1_USB_MODE
+#define M1_USB_MODE M1_CFG_USB_CDC_MSC
+#endif
+#define USBD_OK 0
+#define USBD_BUSY 1
+#define USBD_FAIL 2
+typedef struct {unsigned TxState;} USBD_CDC_HandleTypeDef;
+typedef struct {void *pClassData;void *pClassDataCmsit[2];unsigned classId;} device_t;
+static device_t hUsbDeviceFS;
+static unsigned CDC_InstID=1,transmits;
+static USBD_CDC_HandleTypeDef serial_state,storage_state;
+#if M1_USB_MODE == M1_CFG_USB_CDC_MSC
+static void USBD_CDC_SetTxBuffer(device_t *d,uint8_t *b,unsigned n,unsigned id) {
+ assert(d==&hUsbDeviceFS && b && n==1 && id==1);
+}
+static uint8_t USBD_CDC_TransmitPacket(device_t *d,unsigned id) {
+ assert(d==&hUsbDeviceFS && id==1);++transmits;return USBD_OK;
+}
+#else
+static void USBD_CDC_SetTxBuffer(device_t *d,uint8_t *b,unsigned n) {
+ assert(d==&hUsbDeviceFS && b && n==1);
+}
+static uint8_t USBD_CDC_TransmitPacket(device_t *d) {
+ assert(d==&hUsbDeviceFS);++transmits;return USBD_OK;
+}
+#endif
+""" + function_body(usb_source,'uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)') + r"""
+int main(void) {
+ uint8_t data=0;
+ assert(CDC_Transmit_FS(&data,1)==USBD_BUSY);
+ hUsbDeviceFS.pClassDataCmsit[1]=&serial_state;
+#if M1_USB_MODE == M1_CFG_USB_CDC_MSC
+ hUsbDeviceFS.pClassData=&storage_state;
+ storage_state.TxState=99;
+#else
+ hUsbDeviceFS.pClassData=&serial_state;
+#endif
+ assert(CDC_Transmit_FS(&data,1)==USBD_OK && transmits==1);
+ serial_state.TxState=1;
+ assert(CDC_Transmit_FS(&data,1)==USBD_BUSY && transmits==1);
+ assert(hUsbDeviceFS.classId==0);
+ puts("PASS: USB serial replies use the correct interface, reject disconnected/busy state and preserve composite routing");
+ return 0;
+}
+"""
+(out/'usb-routing.c').write_text(usb_test)
+exe=compile('usb-routing',[out/'usb-routing.c']);print(run([exe]))
+(out/'usb-routing-single.c').write_text('#define M1_USB_MODE 2\n'+usb_test)
+exe=compile('usb-routing-single',[out/'usb-routing-single.c']);print(run([exe]))
+
+print(run([sys.executable, repo/'tools/room_radar/test_device_check.py']))
 
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')
