@@ -73,6 +73,15 @@ class USBTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             device.at("AT+RESTORE")
 
+    def test_rejection_identifies_busy_error(self):
+        class BusyPort(FakePort):
+            def write(self, data):
+                self.pending = frame(7, data[2], b"\x03")
+        serial.Serial = BusyPort
+        device = client.RoomScope("fake")
+        with self.assertRaisesRegex(RuntimeError, "error 03"):
+            device.request(0x65, expected=0x66)
+
     def test_timeout_is_explicit(self):
         device = client.RoomScope("fake")
         with self.assertRaises(TimeoutError):

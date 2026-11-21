@@ -45,7 +45,7 @@ class RoomScope:
                 if sequence != self.sequence:
                     continue
                 if kind == 7:
-                    raise RuntimeError("M1 rejected command " + hex(command))
+                    raise RuntimeError("M1 rejected command " + hex(command) + " (error " + frame[5:-2].hex() + ")")
                 if expected is None or kind == expected:
                     return frame[5:-2]
         raise TimeoutError("No RoomScope USB response to " + hex(command))
