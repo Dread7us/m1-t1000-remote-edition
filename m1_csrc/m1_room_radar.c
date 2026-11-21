@@ -726,13 +726,13 @@ static void watch_settings(void) {
         char rows[4][40];strcpy(rows[3],"Test alert");snprintf(rows[0],40,"Scan pause: %s",intervals[watch_preferences.interval]);
         snprintf(rows[1],40,"Alerts: %s",alerts[watch_preferences.alerts]);
         snprintf(rows[2],40,"Sensitivity: %s",sensitivity[watch_preferences.sensitivity]);
-        m1_u8g2_firstpage();m1_draw_header_bar(&m1_u8g2,"Watch Settings",NULL);
+        m1_u8g2_firstpage();m1_draw_header_bar(&m1_u8g2,"Watch setup",NULL);
         u8g2_SetFont(&m1_u8g2,M1_DISP_FUNC_MENU_FONT_N);
         unsigned first=selected<3?0:1;
         for(unsigned i=first;i<4 && i<first+3;i++){int y=14+(int)(i-first)*12;m1_ui_selection(&m1_u8g2,2,y,124,11,i==selected);
             m1_draw_text(&m1_u8g2,5,y+8,118,rows[i],TEXT_ALIGN_LEFT);}
         m1_draw_bottom_bar(&m1_u8g2,button_back_8x8,"Done","Change",button_ok_8x8);m1_u8g2_nextpage();
-        int key=radar_key(portMAX_DELAY);
+        int key=radar_key(pdMS_TO_TICKS(100));
         if(key==BUTTON_BACK_KP_ID)return;
         if(key==BUTTON_UP_KP_ID)selected=(selected+3)%4;
         if(key==BUTTON_DOWN_KP_ID)selected=(selected+1)%4;
@@ -789,7 +789,7 @@ static void watch_draw(const room_watch_snapshot_t *row,const room_watch_snapsho
         }else strcpy(b,"OK starts monitoring");
         m1_draw_text(&m1_u8g2,5,24,118,a,TEXT_ALIGN_LEFT);
         m1_draw_text(&m1_u8g2,5,36,118,b,TEXT_ALIGN_LEFT);
-        m1_draw_marquee(&m1_u8g2,5,47,118,watch_notice[0]?watch_notice:"Two checks confirm change");
+        m1_draw_marquee(&m1_u8g2,5,47,118,watch_notice[0]?watch_notice:"Needs 2 matching checks");
         foot=watch_running?"Stop":"Start";
     }else{
         const char *items[]={watch_running?"Stop monitoring":"Start monitoring","Check room now","Save current baseline",
@@ -820,7 +820,7 @@ void room_watch_open(void)
         if(page==3 && key==BUTTON_DOWN_KP_ID){action=(action+1)%6;continue;}
         if(key!=BUTTON_OK_KP_ID)continue;
         if(page==3 && action==5){
-            radar_panel("About Room Watch","Keep this screen open","Pause is after a check","Not a people count",NULL);wait_back();continue;
+            radar_panel("About Room Watch","Keep Room Watch open","Pause is after a check","Not a people count",NULL);wait_back();continue;
         }
         if(page==3 && action==4){watch_notice[0]=0;continue;}
         if(page==3 && action==3){watch_settings();page=2;continue;}
