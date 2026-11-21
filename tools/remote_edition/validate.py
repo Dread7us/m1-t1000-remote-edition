@@ -1462,6 +1462,7 @@ exe=compile('usb-routing',[out/'usb-routing.c']);print(run([exe]))
 exe=compile('usb-routing-single',[out/'usb-routing-single.c']);print(run([exe]))
 
 print(run([sys.executable, repo/'tools/room_radar/test_device_check.py']))
+print(run([sys.executable, repo/'tools/room_radar/test_motion_trial.py']))
 
 (out/'test-results.txt').write_text('\n'.join(log))
 print('ALL CONTROL/IR HOST TESTS PASSED')
