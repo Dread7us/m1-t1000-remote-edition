@@ -17,8 +17,14 @@ Sensitivity thresholds are 2/4/8 nearby networks or responding peers, and 8/12/1
 
 ## Failures and saved data
 
-Failed captures never become snapshots or clear a confirmed change. They retry after the configured pause; two consecutive failures can trigger a notification. A different connected router stops monitoring instead of comparing different environments. Replacing the baseline also stops monitoring. No saved credentials or ESP32 firmware changes are needed.
+Failed captures never become snapshots or clear a confirmed change. They retry after the configured pause; two consecutive failures can trigger a notification. A different connected access point (BSSID) stops monitoring instead of comparing different environments. This includes roaming between nodes of a home mesh with the same network name. Run a fresh room check and explicitly save its baseline to monitor that access point; the previous baseline remains in the recovery copy. Replacing the baseline also stops monitoring. No saved credentials or ESP32 firmware changes are needed.
 
 Completed snapshots append to `System/room-watch.csv`. Confirmed changes append to `System/room-watch-events.csv`: uptime milliseconds, direction/category bitmask, network-count delta, responding-peer delta, signal delta. Bit values: 1 more networks, 2 fewer networks, 4 more responding peers, 8 fewer responding peers, 16 stronger signal, 32 weaker signal, 64 different channel. A full SD card is reported; notifications can still occur if event logging fails.
 
 These are network observations. Sleeping peers, radio conditions and background traffic can change the counts; an event is not an intrusion or occupancy verdict.
+
+## r28 beta validation status
+
+The firmware builds and native regression suite pass. On-device checks confirmed basic Wi-Fi, saved preference reload, the Test alert screen, and Alerts Off suppressing the test counter. The first automatic capture completed; the repeated-scan trial stopped because the connected mesh AP differed from the saved baseline. That context guard is intentional. A full repeated-scan trial with a baseline for the current AP, and confirmation of the baseline-save UI sequence, remain pending. Physical beep audibility has not been independently verified. Monitoring was left stopped at the end of the session.
+
+See also [saved-device beta status](device-beta-status.md) for the distinction between AP targeting and individual-client modes.
